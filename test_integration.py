@@ -43,15 +43,21 @@ def test_sample_data():
     print("\n4. Running ACC algorithm (with automatic dendrogram conversion)...")
     result = build_acc_from_matrices(sub_matrix, inc_matrix, unit=1.0, method='average')
 
-    # Display results
+    # Display results (new structure with multiple clusters)
     print("\n5. Results:")
-    print(f"   Members: {result['members']}")
-    print(f"   Diameter: {result['diameter']:.4f}")
-    print(f"   Theta: {result['theta']:.2f}°")
-    print(f"   Center: {result['center']}")
-    print(f"\n   Member positions:")
-    for member, (x, y) in sorted(result['points'].items()):
-        print(f"      {member}: ({x:.4f}, {y:.4f})")
+    print(f"   Total members: {result['all_members']}")
+    print(f"   Number of clusters: {len(result['clusters'])}")
+
+    print(f"\n   Cluster details:")
+    for idx, cluster in enumerate(result['clusters'], 1):
+        print(f"\n   Cluster {idx}:")
+        print(f"      Members: {cluster['members']}")
+        print(f"      Diameter: {cluster['diameter']:.4f}")
+        print(f"      Theta: {cluster['theta']:.2f}°")
+        print(f"      Center: {cluster['center']}")
+        print(f"      Positions:")
+        for member, (x, y) in sorted(cluster['points'].items()):
+            print(f"         {member}: ({x:.4f}, {y:.4f})")
 
     print("\n" + "=" * 60)
     print("Test completed successfully!")

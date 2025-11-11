@@ -337,12 +337,16 @@ def merge_two_clusters(base, new_cluster, inc_matrix):
 
 
 # ------------------------------------------------------------
-# 10. 전체 ACC 빌더
+# 10. 전체 ACC 빌더 (원본 - 단일 병합 버전)
 # ------------------------------------------------------------
-def build_acc(sub_dendro: DendroNode,
-              inc_dendro: DendroNode,
-              inc_matrix: dict,
-              unit=1.0):
+def build_acc_merged(sub_dendro: DendroNode,
+                     inc_dendro: DendroNode,
+                     inc_matrix: dict,
+                     unit=1.0):
+    """
+    Build ACC result by merging all clusters into one
+    This is the original implementation that returns a single merged result
+    """
     # 1) 하위 덴드로그램에서 클러스터 뽑기
     clusters = extract_clusters_from_dendro(sub_dendro)
 
@@ -367,7 +371,52 @@ def build_acc(sub_dendro: DendroNode,
 
 
 # ------------------------------------------------------------
-# 11. 사용 예시
+# 11. 새로운 ACC 빌더 (동심원 버전)
+# ------------------------------------------------------------
+def build_acc(sub_dendro: DendroNode,
+              inc_dendro: DendroNode,
+              inc_matrix: dict,
+              unit=1.0):
+    """
+    Build ACC result with multiple concentric circles
+    Each cluster gets its own circle based on its diameter
+
+    Returns:
+        dict with:
+            - 'clusters': list of positioned clusters
+            - 'all_members': set of all members across all clusters
+    """
+    # 1) 하위 덴드로그램에서 클러스터 뽑기
+    clusters = extract_clusters_from_dendro(sub_dendro)
+
+    # 2) 각 클러스터에 sim_inc, d, theta 부여
+    decorate_clusters(clusters, inc_dendro, inc_matrix, unit=unit)
+
+    # 3) 단일 멤버 클러스터 제외 (2개 이상만)
+    clusters = [c for c in clusters if len(c["members"]) >= 2]
+
+    # 4) 유사도 높은 순으로 정렬
+    clusters.sort(key=lambda c: c["sim_sub"], reverse=True)
+
+    # 5) 각 클러스터를 독립적으로 배치
+    positioned_clusters = []
+    for c in clusters:
+        positioned = place_first_cluster(c)
+        positioned_clusters.append(positioned)
+
+    # 6) 모든 클러스터와 전체 멤버 반환
+    all_members = set()
+    for c in positioned_clusters:
+        all_members.update(c["members"])
+
+    return {
+        "clusters": positioned_clusters,
+        "all_members": all_members
+    }
+
+
+# ------------------------------------------------------------
+# 12. 사용 예시
 # ------------------------------------------------------------
 if __name__ == "__main__":
     # 예시용 하위 덴드로그램 (subordinate)
@@ -399,10 +448,15 @@ if __name__ == "__main__":
 
     acc_result = build_acc(sub_root, inc_root, inc_matrix, unit=1.0)
 
-    # 결과 출력
-    print("ACC members:", acc_result["members"])
-    print("Diameter:", acc_result["diameter"])
-    print("Theta:", acc_result["theta"])
-    print("Points:")
-    for m, p in acc_result["points"].items():
-        print(f"  {m}: {p}")
+    # 결과 출력 (새로운 구조)
+    print("ACC all members:", acc_result["all_members"])
+    print(f"\nNumber of clusters: {len(acc_result['clusters'])}")
+    print("\nCluster details:")
+    for idx, cluster in enumerate(acc_result["clusters"], 1):
+        print(f"\n  Cluster {idx}:")
+        print(f"    Members: {cluster['members']}")
+        print(f"    Diameter: {cluster['diameter']:.3f}")
+        print(f"    Theta: {cluster['theta']:.2f}°")
+        print(f"    Points:")
+        for m, p in cluster["points"].items():
+            print(f"      {m}: ({p[0]:.3f}, {p[1]:.3f})")

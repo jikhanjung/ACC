@@ -14,7 +14,7 @@ import pandas as pd
 from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QTableWidget, QTableWidgetItem, QPushButton, QFileDialog,
-    QLabel, QSlider, QMessageBox, QScrollArea, QCheckBox
+    QLabel, QSlider, QMessageBox, QScrollArea, QCheckBox, QSplitter
 )
 from PyQt6.QtCore import Qt, QTimer
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
@@ -51,8 +51,6 @@ class StepMatrixWidget(QWidget):
         # Header (optional)
         if self.show_header:
             header_layout = QHBoxLayout()
-            title_label = QLabel(f"<b>{self.title}</b>")
-            header_layout.addWidget(title_label)
             header_layout.addStretch()
 
             self.load_btn = QPushButton("Load CSV")
@@ -438,7 +436,7 @@ class StepDendrogramWidget(QWidget):
     def init_ui(self):
         layout = QVBoxLayout()
 
-        # Title and checkbox
+        # Header: title (left) and checkbox (right) in one line
         header_layout = QHBoxLayout()
         title_label = QLabel(f"<b>{self.title}</b>")
         header_layout.addWidget(title_label)
@@ -448,7 +446,6 @@ class StepDendrogramWidget(QWidget):
         self.show_values_checkbox.setStyleSheet("font-size: 10px;")
         self.show_values_checkbox.stateChanged.connect(self.on_checkbox_changed)
         header_layout.addWidget(self.show_values_checkbox)
-
         layout.addLayout(header_layout)
 
         # Matplotlib figure
@@ -567,8 +564,6 @@ class StepDendrogramWidget(QWidget):
                 ax.invert_xaxis()
 
                 ax.set_xlabel('Similarity', fontsize=9)
-                ax.set_title(f'{self.title} (Highlighting steps 1-{self.current_step})',
-                           fontsize=10, fontweight='bold')
                 ax.tick_params(axis='y', labelsize=9)
                 ax.tick_params(axis='x', labelsize=8)
 
@@ -599,10 +594,6 @@ class ACCVisualizationWidget(QWidget):
     def init_ui(self):
         layout = QVBoxLayout()
 
-        # Title
-        title_label = QLabel("<b>ACC Concentric Circles</b>")
-        layout.addWidget(title_label)
-
         # Matplotlib figure
         self.figure = Figure(figsize=(6, 6))
         self.canvas = FigureCanvas(self.figure)
@@ -617,44 +608,75 @@ class ACCVisualizationWidget(QWidget):
         self.setLayout(layout)
 
     def plot_acc_result(self, acc_result):
-        """Plot ACC result with concentric circles"""
+        """Plot ACC result with multiple concentric circles"""
         self.figure.clear()
         ax = self.figure.add_subplot(111)
 
-        # Get data
-        center = acc_result.get("center", (0, 0))
-        diameter = acc_result.get("diameter", 1.0)
-        radius = diameter / 2.0
-        points = acc_result.get("points", {})
-        members = acc_result.get("members", set())
+        # Get clusters from new structure
+        clusters = acc_result.get("clusters", [])
+        all_members = acc_result.get("all_members", set())
 
-        # Draw main circle
-        circle = plt.Circle(center, radius, fill=False, edgecolor='blue', linewidth=2)
-        ax.add_patch(circle)
+        if len(clusters) == 0:
+            ax.text(0.5, 0.5, 'No clusters to display',
+                   ha='center', va='center', fontsize=12, color='gray')
+            ax.set_xlim(0, 1)
+            ax.set_ylim(0, 1)
+            ax.axis('off')
+            self.canvas.draw()
+            return
 
-        # Plot member points
-        colors = plt.cm.Set3(np.linspace(0, 1, len(points)))
-        for idx, (member, (x, y)) in enumerate(sorted(points.items())):
-            ax.plot(x, y, 'o', markersize=10, color=colors[idx],
-                   markeredgecolor='black', markeredgewidth=1.5)
-            ax.text(x, y, f'  {member}', fontsize=10, va='center', fontweight='bold')
+        # Generate colors for clusters
+        cluster_colors = plt.cm.Set3(np.linspace(0, 1, len(clusters)))
 
-        # Set equal aspect ratio and limits
-        margin = radius * 0.3
-        ax.set_xlim(center[0] - radius - margin, center[0] + radius + margin)
-        ax.set_ylim(center[1] - radius - margin, center[1] + radius + margin)
+        # Track which members we've plotted (to avoid duplicates)
+        plotted_members = set()
+
+        # Draw each cluster as a separate circle
+        for cluster_idx, cluster in enumerate(clusters):
+            center = cluster.get("center", (0, 0))
+            diameter = cluster["diameter"]
+            radius = diameter / 2.0
+            points = cluster["points"]
+            members = cluster["members"]
+
+            # Draw cluster circle
+            circle = plt.Circle(center, radius, fill=False,
+                              edgecolor=cluster_colors[cluster_idx],
+                              linewidth=2,
+                              label=f"Cluster {cluster_idx+1} ({len(members)} members)")
+            ax.add_patch(circle)
+
+            # Plot member points on this circle
+            for member, (x, y) in points.items():
+                # Only plot each member once (on the first/smallest cluster it appears in)
+                if member not in plotted_members:
+                    ax.plot(x, y, 'o', markersize=10,
+                           color=cluster_colors[cluster_idx],
+                           markeredgecolor='black', markeredgewidth=1.5)
+                    ax.text(x, y, f'  {member}', fontsize=10,
+                           va='center', fontweight='bold')
+                    plotted_members.add(member)
+
+        # Set equal aspect ratio and limits based on largest circle
+        max_radius = max(c["diameter"]/2.0 for c in clusters)
+        margin = max_radius * 0.3
+        ax.set_xlim(-max_radius - margin, max_radius + margin)
+        ax.set_ylim(-max_radius - margin, max_radius + margin)
         ax.set_aspect('equal')
 
-        # Add grid and labels
+        # Add grid and axes
         ax.grid(True, alpha=0.3)
         ax.axhline(y=0, color='k', linestyle='--', alpha=0.3)
         ax.axvline(x=0, color='k', linestyle='--', alpha=0.3)
         ax.set_xlabel('X', fontsize=10)
         ax.set_ylabel('Y', fontsize=10)
-        ax.set_title('ACC Visualization', fontsize=11, fontweight='bold')
+        ax.set_title('ACC Concentric Circles', fontsize=11, fontweight='bold')
+
+        # Add legend
+        ax.legend(loc='upper right', fontsize=8)
 
         # Add info text
-        info_text = f"Members: {len(members)}\nDiameter: {diameter:.3f}\nTheta: {acc_result.get('theta', 0):.2f}°"
+        info_text = f"Total members: {len(all_members)}\nClusters: {len(clusters)}"
         ax.text(0.02, 0.98, info_text,
                 transform=ax.transAxes,
                 fontsize=9,
@@ -663,7 +685,7 @@ class ACCVisualizationWidget(QWidget):
 
         self.figure.tight_layout()
         self.canvas.draw()
-        self.info_label.setText(f"✓ Generated: {len(members)} members")
+        self.info_label.setText(f"✓ Generated: {len(clusters)} clusters, {len(all_members)} members")
         self.info_label.setStyleSheet("color: green; font-size: 10px;")
 
 
@@ -679,15 +701,10 @@ class ColumnPanel(QWidget):
         layout = QVBoxLayout()
         layout.setContentsMargins(5, 5, 5, 5)
 
-        # Panel title
-        title_label = QLabel(f"<h3 style='color: #1976D2;'>{self.title}</h3>")
-        layout.addWidget(title_label)
-
         # Content area
         self.content_layout = QVBoxLayout()
-        layout.addLayout(self.content_layout)
+        layout.addLayout(self.content_layout, stretch=1)
 
-        layout.addStretch()
         self.setLayout(layout)
 
 
@@ -701,7 +718,7 @@ class LeftPanel(ColumnPanel):
     def setup_content(self):
         # Subordinate matrix section
         sub_header_layout = QHBoxLayout()
-        sub_label = QLabel("<b>1. Subordinate Matrix</b>")
+        sub_label = QLabel("<b>Subordinate</b>")
         sub_header_layout.addWidget(sub_label)
         sub_header_layout.addStretch()
 
@@ -709,16 +726,18 @@ class LeftPanel(ColumnPanel):
         sub_header_layout.addWidget(self.sub_matrix_widget.load_btn)
         self.content_layout.addLayout(sub_header_layout)
 
-        self.content_layout.addWidget(self.sub_matrix_widget)
+        self.content_layout.addWidget(self.sub_matrix_widget, stretch=1)
 
-        # Separator
-        separator = QLabel("<hr>")
-        separator.setMaximumHeight(10)
+        # Separator line
+        separator = QLabel()
+        separator.setFrameStyle(QLabel.Shape.HLine | QLabel.Shadow.Sunken)
+        separator.setStyleSheet("background-color: #cccccc;")
+        separator.setMaximumHeight(2)
         self.content_layout.addWidget(separator)
 
         # Inclusive matrix section
         inc_header_layout = QHBoxLayout()
-        inc_label = QLabel("<b>2. Inclusive Matrix</b>")
+        inc_label = QLabel("<b>Inclusive</b>")
         inc_header_layout.addWidget(inc_label)
         inc_header_layout.addStretch()
 
@@ -726,7 +745,7 @@ class LeftPanel(ColumnPanel):
         inc_header_layout.addWidget(self.inc_matrix_widget.load_btn)
         self.content_layout.addLayout(inc_header_layout)
 
-        self.content_layout.addWidget(self.inc_matrix_widget)
+        self.content_layout.addWidget(self.inc_matrix_widget, stretch=1)
 
     def on_matrix_loaded(self):
         """Called when a matrix is loaded"""
@@ -750,22 +769,19 @@ class CenterPanel(ColumnPanel):
 
     def setup_content(self):
         # Subordinate dendrogram
-        sub_label = QLabel("<b>1. Subordinate Dendrogram</b>")
-        self.content_layout.addWidget(sub_label)
+        self.sub_dendro_widget = StepDendrogramWidget("Subordinate")
+        self.content_layout.addWidget(self.sub_dendro_widget, stretch=1)
 
-        self.sub_dendro_widget = StepDendrogramWidget("Subordinate Clustering")
-        self.content_layout.addWidget(self.sub_dendro_widget)
-
-        # Separator
-        separator = QLabel("<hr>")
+        # Separator line
+        separator = QLabel()
+        separator.setFrameStyle(QLabel.Shape.HLine | QLabel.Shadow.Sunken)
+        separator.setStyleSheet("background-color: #cccccc;")
+        separator.setMaximumHeight(2)
         self.content_layout.addWidget(separator)
 
         # Inclusive dendrogram
-        inc_label = QLabel("<b>2. Inclusive Dendrogram</b>")
-        self.content_layout.addWidget(inc_label)
-
-        self.inc_dendro_widget = StepDendrogramWidget("Inclusive Clustering")
-        self.content_layout.addWidget(self.inc_dendro_widget)
+        self.inc_dendro_widget = StepDendrogramWidget("Inclusive")
+        self.content_layout.addWidget(self.inc_dendro_widget, stretch=1)
 
 
 class RightPanel(ColumnPanel):
@@ -819,19 +835,12 @@ class MainWindow(QMainWindow):
         self.setWindowTitle("ACC Visualizer - Step-by-Step Clustering")
         self.setGeometry(50, 50, 1800, 900)
 
-        # Central widget
-        central_widget = QWidget()
-        self.setCentralWidget(central_widget)
-
-        # Main layout (3 columns)
-        main_layout = QHBoxLayout()
-
         # Create three panels
         self.left_panel = LeftPanel()
         self.center_panel = CenterPanel()
         self.right_panel = RightPanel()
 
-        # Add to layout with scroll areas
+        # Add to scroll areas
         left_scroll = QScrollArea()
         left_scroll.setWidgetResizable(True)
         left_scroll.setWidget(self.left_panel)
@@ -844,12 +853,17 @@ class MainWindow(QMainWindow):
         right_scroll.setWidgetResizable(True)
         right_scroll.setWidget(self.right_panel)
 
-        # Add panels to main layout (equal width)
-        main_layout.addWidget(left_scroll, stretch=1)
-        main_layout.addWidget(center_scroll, stretch=1)
-        main_layout.addWidget(right_scroll, stretch=1)
+        # Create splitter for resizable panels
+        splitter = QSplitter(Qt.Orientation.Horizontal)
+        splitter.addWidget(left_scroll)
+        splitter.addWidget(center_scroll)
+        splitter.addWidget(right_scroll)
 
-        central_widget.setLayout(main_layout)
+        # Set initial sizes (equal width)
+        splitter.setSizes([600, 600, 600])
+
+        # Set central widget
+        self.setCentralWidget(splitter)
 
     def update_dendrograms(self):
         """Update dendrograms when matrices are loaded"""
@@ -931,13 +945,26 @@ class MainWindow(QMainWindow):
             # Visualize
             self.right_panel.acc_widget.plot_acc_result(acc_result)
 
+            # Build info message for new structure
+            clusters = acc_result.get('clusters', [])
+            all_members = acc_result.get('all_members', set())
+
+            # Get diameter range
+            if clusters:
+                diameters = [c['diameter'] for c in clusters]
+                min_d = min(diameters)
+                max_d = max(diameters)
+                diameter_info = f"Diameter range: {min_d:.3f} - {max_d:.3f}"
+            else:
+                diameter_info = "No clusters"
+
             QMessageBox.information(
                 self,
                 "Success",
                 f"ACC Visualization generated!\n\n"
-                f"Members: {len(acc_result['members'])}\n"
-                f"Diameter: {acc_result['diameter']:.3f}\n"
-                f"Theta: {acc_result['theta']:.2f}°"
+                f"Total members: {len(all_members)}\n"
+                f"Clusters: {len(clusters)}\n"
+                f"{diameter_info}"
             )
 
         except Exception as e:

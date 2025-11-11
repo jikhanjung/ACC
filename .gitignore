@@ -158,3 +158,4 @@ temp/
 tmp/
 output/
 results/
+*.docx

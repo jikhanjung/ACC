@@ -246,7 +246,7 @@ def dict_matrix_from_dataframe(df):
 
 def build_acc_from_matrices(sub_matrix, inc_matrix, unit=1.0, method='average'):
     """
-    Build ACC result directly from similarity matrices
+    Build ACC result directly from similarity matrices with multiple concentric circles
     This is a convenience function that handles the complete pipeline
 
     Args:
@@ -256,7 +256,9 @@ def build_acc_from_matrices(sub_matrix, inc_matrix, unit=1.0, method='average'):
         method: linkage method for hierarchical clustering
 
     Returns:
-        acc_result: dict with 'members', 'diameter', 'theta', 'center', 'points'
+        acc_result: dict with:
+            - 'clusters': list of positioned clusters
+            - 'all_members': set of all members across all clusters
     """
     from acc_core import build_acc, DendroNode
 
@@ -264,28 +266,7 @@ def build_acc_from_matrices(sub_matrix, inc_matrix, unit=1.0, method='average'):
     sub_dendro, sub_labels = matrix_to_dendrogram(sub_matrix, method=method)
     inc_dendro, inc_labels = matrix_to_dendrogram(inc_matrix, method=method)
 
-    # Extract clusters (filtered to exclude single-member leaves)
-    clusters = extract_clusters_from_dendro_filtered(sub_dendro)
+    # Call build_acc which now returns multiple clusters
+    acc_result = build_acc(sub_dendro, inc_dendro, inc_matrix, unit=unit)
 
-    # Decorate clusters with sim_inc, diameter, theta
-    from acc_core import decorate_clusters, place_first_cluster, add_area_to_cluster, merge_two_clusters
-
-    decorate_clusters(clusters, inc_dendro, inc_matrix, unit=unit)
-
-    # Sort by sim_sub descending
-    clusters.sort(key=lambda c: c["sim_sub"], reverse=True)
-
-    if len(clusters) == 0:
-        raise ValueError("No clusters found with 2 or more members")
-
-    # Place first cluster
-    base = place_first_cluster(clusters[0])
-
-    # Merge remaining clusters
-    for c in clusters[1:]:
-        if len(c["members"]) == len(base["members"]) + 1 and base["members"].issubset(c["members"]):
-            base = add_area_to_cluster(base, c, inc_matrix)
-        else:
-            base = merge_two_clusters(base, c, inc_matrix)
-
-    return base
+    return acc_result

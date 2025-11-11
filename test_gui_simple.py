@@ -16,10 +16,11 @@ inc_matrix = dict_matrix_from_dataframe(inc_df)
 print("Running ACC algorithm...")
 result = build_acc_from_matrices(sub_matrix, inc_matrix, unit=1.0)
 
-print("\n✓ SUCCESS! Points are properly distributed:")
-for member, (x, y) in sorted(result['points'].items()):
-    print(f"  {member}: ({x:.4f}, {y:.4f})")
+print("\n✓ SUCCESS! Multiple concentric circles generated:")
+print(f"Total members: {len(result['all_members'])}")
+print(f"Number of clusters: {len(result['clusters'])}")
 
-print(f"\nDiameter: {result['diameter']:.4f}")
-print(f"Theta: {result['theta']:.2f}°")
-print(f"Total members: {len(result['members'])}")
+for idx, cluster in enumerate(result['clusters'], 1):
+    print(f"\nCluster {idx} (diameter: {cluster['diameter']:.4f}, theta: {cluster['theta']:.2f}°):")
+    for member, (x, y) in sorted(cluster['points'].items()):
+        print(f"  {member}: ({x:.4f}, {y:.4f})")
