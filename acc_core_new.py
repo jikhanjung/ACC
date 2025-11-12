@@ -93,38 +93,35 @@ def place_first_two_areas(area1, area2, sub_sim, inc_sim, unit=1.0):
 
     Args:
         area1, area2: names of the two areas
-        sub_sim: subordinate similarity (determines radius)
-        inc_sim: inclusive similarity (determines angle)
-        unit: unit parameter for calculation
+        sub_sim: subordinate similarity (determines angle - closest possible affinity)
+        inc_sim: inclusive similarity (determines diameter - farthest possible affinity)
+        unit: unit parameter for calculation (e.g., 1.0 cm)
 
     Returns:
         dict: cluster information with positioned areas
     """
-    # Calculate radius based on subordinate similarity
-    # Higher similarity -> smaller radius (tighter cluster)
-    # Example formula: radius = unit / sub_sim
-    # Or: radius = unit * (1 - sub_sim)  <- this makes more sense
-    # Let's use: radius = unit * (2 - sub_sim) to ensure positive value
+    # Calculate diameter based on INCLUSIVE similarity (farthest possible affinity)
+    # Formula from paper: d = unit / inc_sim
+    # Higher inclusive similarity -> smaller diameter (tighter cluster overall)
+    # If inc_sim = 1.0 (perfect), diameter = unit
+    # If inc_sim = 0.5 (medium), diameter = 2 * unit
+    # If inc_sim = 0.0, diameter would be infinite (avoid division by zero)
 
-    # Actually, let's think about this more carefully:
-    # If sub_sim = 1.0 (perfect), we want small radius
-    # If sub_sim = 0.5 (medium), we want medium radius
-    # If sub_sim = 0.0 (no similarity), we want large radius
-
-    # Formula: radius = unit / sub_sim seems good, but avoid division by zero
-    if sub_sim > 0:
-        radius = unit / sub_sim
+    if inc_sim > 0:
+        diameter = unit / inc_sim
     else:
-        radius = unit * 100  # Very large
+        diameter = unit * 100  # Very large
 
-    # Calculate angle based on inclusive similarity
-    # Higher similarity -> smaller angle (closer together)
-    # Formula: angle = 180° * (1 - inc_sim)
-    # If inc_sim = 1.0, angle = 0° (same position)
-    # If inc_sim = 0.5, angle = 90°
-    # If inc_sim = 0.0, angle = 180° (opposite sides)
+    radius = diameter / 2.0
 
-    angle = 180.0 * (1.0 - inc_sim)
+    # Calculate angle based on SUBORDINATE similarity (closest possible affinity)
+    # Formula from paper: θ = 180° × (1 - sub_sim)
+    # Higher subordinate similarity -> smaller angle (closer together)
+    # If sub_sim = 1.0, angle = 0° (same position)
+    # If sub_sim = 0.5, angle = 90°
+    # If sub_sim = 0.0, angle = 180° (opposite sides)
+
+    angle = 180.0 * (1.0 - sub_sim)
 
     # Place areas on circle
     # Center at origin
@@ -344,32 +341,34 @@ def place_independent_pair(area1, area2, sub_sim, inc_sim, unit=1.0):
     return place_first_two_areas(area1, area2, sub_sim, inc_sim, unit)
 
 
-def add_area_to_cluster(cluster, new_area, inc_matrix):
+def add_area_to_cluster(cluster, new_area, sub_matrix, inc_matrix):
     """
     Add a single area to an existing cluster
 
     Args:
         cluster: existing cluster dict
         new_area: name of area to add
-        inc_matrix: inclusive similarity matrix
+        sub_matrix: subordinate similarity matrix (for angle calculation)
+        inc_matrix: inclusive similarity matrix (for diameter reference)
 
     Returns:
         dict: updated cluster with new area positioned
     """
     # Find which member has highest similarity to new area
+    # Use SUBORDINATE similarity (closest possible affinity) for positioning
     best_member = None
-    best_sim = -1.0
+    best_sub_sim = -1.0
 
     for member in cluster['members']:
-        sim = get_similarity(inc_matrix, member, new_area)
-        if sim and sim > best_sim:
-            best_sim = sim
+        sub_sim = get_similarity(sub_matrix, member, new_area)
+        if sub_sim and sub_sim > best_sub_sim:
+            best_sub_sim = sub_sim
             best_member = member
 
     if best_member is None:
         # Fallback: use first member
         best_member = list(cluster['members'])[0]
-        best_sim = 0.5
+        best_sub_sim = 0.5
 
     # Create updated cluster
     new_cluster = {
@@ -385,9 +384,9 @@ def add_area_to_cluster(cluster, new_area, inc_matrix):
     }
 
     # Calculate position for new area
-    # Place it based on similarity to best_member
-    # Angle from best_member is based on inclusive similarity
-    angle_from_member = 180.0 * (1.0 - best_sim)
+    # Place it based on SUBORDINATE similarity to best_member (closest possible affinity)
+    # Angle from best_member is based on subordinate similarity
+    angle_from_member = 180.0 * (1.0 - best_sub_sim)
 
     # Get position of best_member
     best_pos = cluster['points'][best_member]
@@ -408,37 +407,45 @@ def add_area_to_cluster(cluster, new_area, inc_matrix):
     return new_cluster
 
 
-def merge_two_clusters(c1, c2, inc_matrix, unit=1.0):
+def merge_two_clusters(c1, c2, sub_matrix, inc_matrix, unit=1.0):
     """
     Merge two independent clusters into one
 
     Args:
         c1, c2: cluster dicts to merge
-        inc_matrix: inclusive similarity matrix
+        sub_matrix: subordinate similarity matrix (for angle calculation)
+        inc_matrix: inclusive similarity matrix (for diameter calculation)
         unit: unit parameter
 
     Returns:
         dict: merged cluster
     """
     # Find the most similar pair between the two clusters
-    best_sim = -1.0
+    # Use SUBORDINATE similarity (closest possible affinity) for positioning
+    best_sub_sim = -1.0
+    best_inc_sim = -1.0
     best_pair = None
 
     for m1 in c1['members']:
         for m2 in c2['members']:
-            sim = get_similarity(inc_matrix, m1, m2)
-            if sim and sim > best_sim:
-                best_sim = sim
+            sub_sim = get_similarity(sub_matrix, m1, m2)
+            if sub_sim and sub_sim > best_sub_sim:
+                best_sub_sim = sub_sim
                 best_pair = (m1, m2)
+                # Also get inclusive similarity for this pair
+                inc_sim = get_similarity(inc_matrix, m1, m2)
+                best_inc_sim = inc_sim if inc_sim else sub_sim
 
     if best_pair is None:
         # Fallback
         best_pair = (list(c1['members'])[0], list(c2['members'])[0])
-        best_sim = 0.5
+        best_sub_sim = 0.5
+        best_inc_sim = 0.5
 
     m1, m2 = best_pair
 
     # Calculate merged cluster properties
+    # Diameter is based on INCLUSIVE similarity (farthest possible affinity)
     # Use the larger diameter to accommodate both clusters
     new_diameter = max(c1['diameter'], c2['diameter']) * 1.5  # Scale up for combined size
     new_radius = new_diameter / 2.0
@@ -446,8 +453,9 @@ def merge_two_clusters(c1, c2, inc_matrix, unit=1.0):
     # Use smaller angle (tighter cluster)
     new_angle = min(c1['angle'], c2['angle'])
 
-    # Calculate angle between the two alignment members based on similarity
-    alignment_angle = 180.0 * (1.0 - best_sim)
+    # Calculate angle between the two alignment members based on SUBORDINATE similarity
+    # (closest possible affinity)
+    alignment_angle = 180.0 * (1.0 - best_sub_sim)
 
     # Create merged cluster centered at origin
     merged = {
@@ -456,8 +464,8 @@ def merge_two_clusters(c1, c2, inc_matrix, unit=1.0):
         'radius': new_radius,
         'diameter': new_diameter,
         'angle': new_angle,
-        'sub_sim': best_sim,  # Use alignment similarity
-        'inc_sim': best_sim,
+        'sub_sim': best_sub_sim,  # Subordinate similarity (closest affinity)
+        'inc_sim': best_inc_sim,  # Inclusive similarity (farthest affinity)
         'points': {},
         'midline_angle': 0.0
     }
@@ -712,7 +720,7 @@ def build_acc_iterative(sub_matrix, inc_matrix, unit=1.0, method='average'):
 
             if cluster_idx is not None:
                 # Update the cluster
-                updated_cluster = add_area_to_cluster(cluster, area, current_inc)
+                updated_cluster = add_area_to_cluster(cluster, area, current_sub, current_inc)
                 logger.info(f"  New position: ({updated_cluster['points'][area][0]:.3f}, {updated_cluster['points'][area][1]:.3f})")
 
                 active_clusters[cluster_idx] = updated_cluster
@@ -751,7 +759,7 @@ def build_acc_iterative(sub_matrix, inc_matrix, unit=1.0, method='average'):
 
             if idx1 is not None and idx2 is not None:
                 # Merge the clusters
-                merged_cluster = merge_two_clusters(c1, c2, current_inc, unit=1.0)
+                merged_cluster = merge_two_clusters(c1, c2, current_sub, current_inc, unit=1.0)
                 logger.info(f"  New merged cluster:")
                 logger.info(f"    Total members: {len(merged_cluster['members'])}")
                 logger.info(f"    New radius: {merged_cluster['radius']:.3f}")
