@@ -24,7 +24,7 @@ import matplotlib.pyplot as plt
 from scipy.cluster.hierarchy import dendrogram, linkage
 from scipy.spatial.distance import squareform
 
-from acc_utils import validate_similarity_matrix, dict_matrix_from_dataframe, build_acc_from_matrices, build_acc_from_matrices_steps
+from acc_utils import validate_similarity_matrix, dict_matrix_from_dataframe, build_acc_from_matrices, build_acc_from_matrices_steps, build_acc_from_matrices_iterative
 from clustering_steps import ClusteringStepManager
 
 
@@ -1070,22 +1070,38 @@ class ACCVisualizationWidget(QWidget):
             self.step_controls.setVisible(False)
 
     def plot_acc_step(self, step_info):
-        """Plot a single ACC step"""
+        """Plot a single ACC step (supports new iterative algorithm)"""
         self.figure.clear()
         ax = self.figure.add_subplot(111)
 
-        cluster = step_info["current_cluster"]
-        highlighted_members = step_info["highlighted_members"]
-        action = step_info["action"]
+        # New algorithm uses "clusters" list instead of single "current_cluster"
+        clusters = step_info.get("clusters", [])
+        highlighted_members = step_info.get("highlighted_members", set())
+        action = step_info.get("action", "unknown")
 
-        # Get cluster properties
-        center = cluster.get("center", (0, 0))
-        diameter = cluster["diameter"]
-        radius = diameter / 2.0
-        points = cluster["points"]
-        members = cluster["members"]
+        if not clusters:
+            ax.text(0.5, 0.5, 'No clusters to display',
+                   ha='center', va='center', fontsize=12, color='gray')
+            ax.set_xlim(0, 1)
+            ax.set_ylim(0, 1)
+            ax.axis('off')
+            self.canvas.draw()
+            return
 
-        if len(points) == 0:
+        # Find bounds for all clusters
+        all_x = []
+        all_y = []
+        max_radius = 0
+
+        for cluster in clusters:
+            points = cluster.get("points", {})
+            for x, y in points.values():
+                all_x.append(x)
+                all_y.append(y)
+            radius = cluster.get("radius", 0)
+            max_radius = max(max_radius, radius)
+
+        if not all_x:
             ax.text(0.5, 0.5, 'No points to display',
                    ha='center', va='center', fontsize=12, color='gray')
             ax.set_xlim(0, 1)
@@ -1094,34 +1110,55 @@ class ACCVisualizationWidget(QWidget):
             self.canvas.draw()
             return
 
-        # Draw cluster circle
-        circle = plt.Circle(center, radius, fill=False,
-                          edgecolor='blue', linewidth=2,
-                          label=f"Cluster ({len(members)} members)")
-        ax.add_patch(circle)
+        # Plot each cluster
+        cluster_colors = ['blue', 'green', 'purple', 'orange', 'brown']
+        total_members = 0
 
-        # Plot member points
-        for member, (x, y) in points.items():
-            # Use different colors for highlighted vs existing members
-            if member in highlighted_members:
-                color = 'red'  # Highlighted (newly added)
-                markersize = 12
-                label_color = 'red'
-            else:
-                color = 'blue'  # Existing
-                markersize = 10
-                label_color = 'black'
+        for idx, cluster in enumerate(clusters):
+            center = cluster.get("center", (0, 0))
+            diameter = cluster.get("diameter", 0)
+            radius = diameter / 2.0
+            points = cluster.get("points", {})
+            members = cluster.get("members", set())
+            total_members += len(members)
 
-            ax.plot(x, y, 'o', markersize=markersize,
-                   color=color,
-                   markeredgecolor='black', markeredgewidth=1.5)
-            ax.text(x, y, f'  {member}', fontsize=10,
-                   va='center', fontweight='bold', color=label_color)
+            # Draw cluster circle
+            circle_color = cluster_colors[idx % len(cluster_colors)]
+            circle = plt.Circle(center, radius, fill=False,
+                              edgecolor=circle_color, linewidth=2, linestyle='--',
+                              alpha=0.6,
+                              label=f"Cluster {idx+1} ({len(members)} members)")
+            ax.add_patch(circle)
+
+            # Plot member points
+            for member, (x, y) in points.items():
+                # Use different colors for highlighted vs existing members
+                if member in highlighted_members:
+                    color = 'red'  # Highlighted (newly added)
+                    markersize = 12
+                    label_color = 'red'
+                else:
+                    color = circle_color  # Match cluster color
+                    markersize = 10
+                    label_color = 'black'
+
+                ax.plot(x, y, 'o', markersize=markersize,
+                       color=color,
+                       markeredgecolor='black', markeredgewidth=1.5)
+                ax.text(x, y, f'  {member}', fontsize=10,
+                       va='center', fontweight='bold', color=label_color)
 
         # Set equal aspect ratio and limits
-        margin = radius * 0.3 if radius > 0 else 1.0
-        ax.set_xlim(-radius - margin, radius + margin)
-        ax.set_ylim(-radius - margin, radius + margin)
+        margin = max_radius * 0.5 if max_radius > 0 else 1.0
+        x_range = max(all_x) - min(all_x) if len(all_x) > 1 else 2.0
+        y_range = max(all_y) - min(all_y) if len(all_y) > 1 else 2.0
+        plot_range = max(x_range, y_range, max_radius * 2) + margin
+
+        center_x = (max(all_x) + min(all_x)) / 2 if len(all_x) > 1 else 0
+        center_y = (max(all_y) + min(all_y)) / 2 if len(all_y) > 1 else 0
+
+        ax.set_xlim(center_x - plot_range/2, center_x + plot_range/2)
+        ax.set_ylim(center_y - plot_range/2, center_y + plot_range/2)
         ax.set_aspect('equal')
 
         # Add grid and axes
@@ -1137,9 +1174,8 @@ class ACCVisualizationWidget(QWidget):
 
         # Add info text
         info_lines = [
-            f"Members: {len(members)}",
-            f"Diameter: {diameter:.3f}",
-            f"Theta: {cluster['theta']:.2f}°",
+            f"Active Clusters: {len(clusters)}",
+            f"Total Members: {total_members}",
             f"Action: {action}"
         ]
         if highlighted_members:
@@ -1600,8 +1636,8 @@ class MainWindow(QMainWindow):
                 )
                 return
 
-            # Run ACC algorithm step by step
-            acc_steps = build_acc_from_matrices_steps(sub_matrix, inc_matrix, unit=1.0, method='average')
+            # Run ACC algorithm step by step (NEW ITERATIVE ALGORITHM)
+            acc_steps = build_acc_from_matrices_iterative(sub_matrix, inc_matrix, unit=1.0, method='average')
 
             # Visualize with step controls
             self.right_panel.acc_widget.set_acc_steps(acc_steps)
@@ -1609,21 +1645,33 @@ class MainWindow(QMainWindow):
             # Build info message
             if acc_steps:
                 final_step = acc_steps[-1]
-                cluster = final_step["current_cluster"]
-                members = cluster["members"]
-                diameter = cluster["diameter"]
-                theta = cluster["theta"]
+                # New algorithm uses "clusters" list instead of single "current_cluster"
+                clusters = final_step["clusters"]
 
-                QMessageBox.information(
-                    self,
-                    "Success",
-                    f"ACC Visualization generated!\n\n"
-                    f"Total steps: {len(acc_steps)}\n"
-                    f"Total members: {len(members)}\n"
-                    f"Final diameter: {diameter:.3f}\n"
-                    f"Final theta: {theta:.2f}°\n\n"
-                    f"Use slider to navigate through steps"
-                )
+                # Get the final merged cluster (should be only one at the end)
+                if clusters:
+                    cluster = clusters[0]
+                    members = cluster["members"]
+                    diameter = cluster["diameter"]
+                    theta = cluster["angle"]  # Note: new algorithm uses "angle" not "theta"
+
+                    QMessageBox.information(
+                        self,
+                        "Success",
+                        f"ACC Visualization generated! (New Algorithm)\n\n"
+                        f"Total steps: {len(acc_steps)}\n"
+                        f"Number of final clusters: {len(clusters)}\n"
+                        f"Total members: {len(members)}\n"
+                        f"Final diameter: {diameter:.3f}\n"
+                        f"Final angle: {theta:.2f}°\n\n"
+                        f"Use slider to navigate through steps"
+                    )
+                else:
+                    QMessageBox.warning(
+                        self,
+                        "Warning",
+                        "ACC generation completed but no clusters found"
+                    )
             else:
                 QMessageBox.warning(
                     self,
@@ -1652,3 +1700,6 @@ def main():
 
 if __name__ == "__main__":
     main()
+'''
+pyinstaller --name "AACCViz_v0.0.1_20251112.exe" --onefile --noconsole acc_gui.py
+'''

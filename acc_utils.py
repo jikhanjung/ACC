@@ -296,3 +296,27 @@ def build_acc_from_matrices_steps(sub_matrix, inc_matrix, unit=1.0, method='aver
     steps = build_acc_steps(sub_dendro, inc_dendro, inc_matrix, unit=unit)
 
     return steps
+
+
+def build_acc_from_matrices_iterative(sub_matrix, inc_matrix, unit=1.0, method='average'):
+    """
+    Build ACC iteratively using the new algorithm (Option 1 approach)
+    Always selects globally highest similarity at each step
+
+    This is the NEW algorithm that doesn't require dendrograms.
+
+    Args:
+        sub_matrix: subordinate similarity matrix (dict of dict)
+        inc_matrix: inclusive similarity matrix (dict of dict)
+        unit: unit parameter for diameter calculation
+        method: linkage method for cluster similarity calculation
+
+    Returns:
+        steps: list of dicts, each containing step information
+    """
+    from acc_core_new import build_acc_iterative
+
+    # Call the new iterative algorithm directly on matrices
+    steps = build_acc_iterative(sub_matrix, inc_matrix, unit=unit, method=method)
+
+    return steps

@@ -11,3 +11,5 @@ pandas>=2.3.0
 
 # Visualization
 matplotlib>=3.10.0
+
+pyinstaller>=6.10.0
