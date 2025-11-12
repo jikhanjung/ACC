@@ -1,6 +1,6 @@
 """
 ACC (Adaptive Cluster Circle) GUI Application
-PyQt6-based interface for visualizing hierarchical cluster relationships
+PyQt5-based interface for visualizing hierarchical cluster relationships
 
 Three-column layout with step-by-step clustering visualization:
 - Left: Similarity Matrices (with step slider)
@@ -11,23 +11,30 @@ Three-column layout with step-by-step clustering visualization:
 import sys
 import numpy as np
 import pandas as pd
-from PyQt6.QtWidgets import (
+from PyQt5.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QTableWidget, QTableWidgetItem, QPushButton, QFileDialog,
     QLabel, QSlider, QMessageBox, QScrollArea, QCheckBox, QSplitter,
-    QDialog, QListWidget, QInputDialog, QDialogButtonBox
+    QDialog, QListWidget, QInputDialog, QDialogButtonBox, QTextEdit
 )
-from PyQt6.QtCore import Qt, QTimer
-from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
+from PyQt5.QtCore import Qt, QTimer
+
+# Import matplotlib components with proper backend setup
+import os
+os.environ['QT_API'] = 'pyqt5'
+
+import matplotlib
+matplotlib.use('Qt5Agg')
+
 from matplotlib.figure import Figure
 import matplotlib.pyplot as plt
+from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 from scipy.cluster.hierarchy import dendrogram, linkage
 from scipy.spatial.distance import squareform
-
 from acc_utils import validate_similarity_matrix, dict_matrix_from_dataframe, build_acc_from_matrices, build_acc_from_matrices_steps, build_acc_from_matrices_iterative
 from clustering_steps import ClusteringStepManager
-
-
+import logging
+from io import StringIO
 class AreaListEditorDialog(QDialog):
     """Dialog for editing the list of areas (row/column labels)"""
 
@@ -47,13 +54,13 @@ class AreaListEditorDialog(QDialog):
 
         # Title
         title = QLabel("<h3>Edit Area List</h3>")
-        title.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        title.setAlignment(Qt.AlignCenter)
         layout.addWidget(title)
 
         # Info label
         info = QLabel("Areas must be the same for both Subordinate and Inclusive matrices.")
         info.setStyleSheet("color: #666; font-size: 10px; font-style: italic;")
-        info.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        info.setAlignment(Qt.AlignCenter)
         layout.addWidget(info)
 
         # Main content area
@@ -266,6 +273,124 @@ class AreaListEditorDialog(QDialog):
         }
 
 
+class LogViewerDialog(QDialog):
+    """Dialog for viewing ACC generation logs"""
+
+    def __init__(self, log_text, parent=None):
+        super().__init__(parent)
+        self.log_text = log_text
+        self.init_ui()
+
+    def init_ui(self):
+        self.setWindowTitle("ACC Generation Log")
+        self.setMinimumSize(900, 700)
+
+        layout = QVBoxLayout()
+
+        # Title
+        title = QLabel("<h3>📋 ACC Generation Log</h3>")
+        title.setAlignment(Qt.AlignCenter)
+        layout.addWidget(title)
+
+        # Info label
+        info = QLabel("Detailed log of the ACC generation process")
+        info.setStyleSheet("color: #666; font-size: 10px; font-style: italic;")
+        info.setAlignment(Qt.AlignCenter)
+        layout.addWidget(info)
+
+        # Log text area (read-only)
+        self.log_display = QTextEdit()
+        self.log_display.setReadOnly(True)
+        self.log_display.setPlainText(self.log_text)
+        self.log_display.setStyleSheet("""
+            QTextEdit {
+                font-family: 'Courier New', monospace;
+                font-size: 12px;
+                background-color: #f5f5f5;
+                border: 1px solid #ddd;
+                padding: 8px;
+            }
+        """)
+        layout.addWidget(self.log_display)
+
+        # Button layout
+        button_layout = QHBoxLayout()
+
+        # Copy to clipboard button
+        copy_btn = QPushButton("📋 Copy to Clipboard")
+        copy_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #2196F3;
+                color: white;
+                padding: 8px 16px;
+                border-radius: 4px;
+                font-weight: bold;
+            }
+            QPushButton:hover {
+                background-color: #1976D2;
+            }
+        """)
+        copy_btn.clicked.connect(self.copy_to_clipboard)
+        button_layout.addWidget(copy_btn)
+
+        # Save to file button
+        save_btn = QPushButton("💾 Save to File")
+        save_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #4CAF50;
+                color: white;
+                padding: 8px 16px;
+                border-radius: 4px;
+                font-weight: bold;
+            }
+            QPushButton:hover {
+                background-color: #45a049;
+            }
+        """)
+        save_btn.clicked.connect(self.save_to_file)
+        button_layout.addWidget(save_btn)
+
+        button_layout.addStretch()
+
+        # Close button
+        close_btn = QPushButton("Close")
+        close_btn.setStyleSheet("""
+            QPushButton {
+                padding: 8px 16px;
+                border-radius: 4px;
+            }
+        """)
+        close_btn.clicked.connect(self.accept)
+        button_layout.addWidget(close_btn)
+
+        layout.addLayout(button_layout)
+
+        self.setLayout(layout)
+
+    def copy_to_clipboard(self):
+        """Copy log text to clipboard"""
+        clipboard = QApplication.clipboard()
+        clipboard.setText(self.log_text)
+        QMessageBox.information(self, "Copied", "Log copied to clipboard!")
+
+    def save_to_file(self):
+        """Save log to file"""
+        filename, _ = QFileDialog.getSaveFileName(
+            self,
+            "Save Log File",
+            "acc_generation_log.txt",
+            "Text Files (*.txt);;All Files (*)"
+        )
+
+        if filename:
+            try:
+                with open(filename, 'w', encoding='utf-8') as f:
+                    f.write(self.log_text)
+                QMessageBox.information(self, "Saved", f"Log saved to:\n{filename}")
+            except Exception as e:
+                QMessageBox.critical(self, "Error", f"Failed to save log:\n{str(e)}")
+
+
 class StepMatrixWidget(QWidget):
     """Widget for displaying similarity matrix with step control"""
 
@@ -346,11 +471,11 @@ class StepMatrixWidget(QWidget):
 
         # Slider and buttons
         slider_layout = QHBoxLayout()
-        self.step_slider = QSlider(Qt.Orientation.Horizontal)
+        self.step_slider = QSlider(Qt.Horizontal)
         self.step_slider.setMinimum(0)
         self.step_slider.setMaximum(0)
         self.step_slider.setValue(0)
-        self.step_slider.setTickPosition(QSlider.TickPosition.TicksBelow)
+        self.step_slider.setTickPosition(QSlider.TicksBelow)
         self.step_slider.setTickInterval(1)
         self.step_slider.valueChanged.connect(self.on_step_changed)
         slider_layout.addWidget(self.step_slider)
@@ -598,7 +723,7 @@ class StepMatrixWidget(QWidget):
 
         # Determine which row/col to highlight
         highlight_indices = ()
-        highlight_color = Qt.GlobalColor.yellow
+        highlight_color = Qt.yellow
 
         if self.is_preview_mode and self.preview_clusters:
             # Preview mode: highlight clusters to be merged (yellow)
@@ -614,7 +739,7 @@ class StepMatrixWidget(QWidget):
                     # Upper triangle: show values (editable)
                     value = matrix[i, j]
                     item = QTableWidgetItem(f"{value:.3f}")
-                    item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+                    item.setTextAlignment(Qt.AlignCenter)
 
                     # Highlight appropriate rows/cols
                     # In upper triangle: i is row index, j is column index
@@ -634,20 +759,20 @@ class StepMatrixWidget(QWidget):
                         item.setBackground(highlight_color)
 
                     # Upper triangle is editable
-                    item.setFlags(item.flags() | Qt.ItemFlag.ItemIsEditable)
+                    item.setFlags(item.flags() | Qt.ItemIsEditable)
                     self.table.setItem(i, j, item)
                 elif i == j:
                     # Diagonal: empty with gray background
                     item = QTableWidgetItem("")
-                    item.setBackground(Qt.GlobalColor.lightGray)
-                    item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsEditable)
+                    item.setBackground(Qt.lightGray)
+                    item.setFlags(item.flags() & ~Qt.ItemIsEditable)
                     item.setToolTip("Diagonal cells are always 1.0 (not shown)")
                     self.table.setItem(i, j, item)
                 else:
                     # Lower triangle: empty with gray background
                     item = QTableWidgetItem("")
-                    item.setBackground(Qt.GlobalColor.lightGray)
-                    item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsEditable)
+                    item.setBackground(Qt.lightGray)
+                    item.setFlags(item.flags() & ~Qt.ItemIsEditable)
                     item.setToolTip("Lower triangle is mirrored from upper triangle (not shown)")
                     self.table.setItem(i, j, item)
 
@@ -748,8 +873,8 @@ class StepMatrixWidget(QWidget):
                 self.table.setHorizontalHeaderLabels([label])
                 self.table.setVerticalHeaderLabels([label])
                 item = QTableWidgetItem("")
-                item.setBackground(Qt.GlobalColor.lightGray)
-                item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsEditable)
+                item.setBackground(Qt.lightGray)
+                item.setFlags(item.flags() & ~Qt.ItemIsEditable)
                 item.setToolTip("Diagonal cell (always 1.0)")
                 self.table.setItem(0, 0, item)
                 self.info_label.setText(f"✓ Updated: 1 area (need at least 2 for clustering)")
@@ -819,7 +944,7 @@ class StepDendrogramWidget(QWidget):
         # Info label
         self.info_label = QLabel("Load matrix to view dendrogram")
         self.info_label.setStyleSheet("color: gray; font-style: italic; font-size: 10px;")
-        self.info_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.info_label.setAlignment(Qt.AlignCenter)
         layout.addWidget(self.info_label)
 
         self.setLayout(layout)
@@ -979,11 +1104,11 @@ class ACCVisualizationWidget(QWidget):
 
         # Slider and buttons
         slider_layout = QHBoxLayout()
-        self.step_slider = QSlider(Qt.Orientation.Horizontal)
+        self.step_slider = QSlider(Qt.Horizontal)
         self.step_slider.setMinimum(0)
         self.step_slider.setMaximum(0)
         self.step_slider.setValue(0)
-        self.step_slider.setTickPosition(QSlider.TickPosition.TicksBelow)
+        self.step_slider.setTickPosition(QSlider.TicksBelow)
         self.step_slider.setTickInterval(1)
         self.step_slider.valueChanged.connect(self.on_step_changed)
         slider_layout.addWidget(self.step_slider)
@@ -1018,7 +1143,7 @@ class ACCVisualizationWidget(QWidget):
         # Info label
         self.info_label = QLabel("Load both matrices and click Generate")
         self.info_label.setStyleSheet("color: gray; font-style: italic; font-size: 10px;")
-        self.info_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.info_label.setAlignment(Qt.AlignCenter)
         layout.addWidget(self.info_label)
 
         self.setLayout(layout)
@@ -1423,10 +1548,10 @@ class LeftPanel(ColumnPanel):
             dialog = AreaListEditorDialog(sub_labels, sub_df, inc_df, self)
             print("Dialog created, executing...")  # Debug
 
-            result_code = dialog.exec()
+            result_code = dialog.exec_()
             print(f"Dialog closed with code: {result_code}")  # Debug
 
-            if result_code == QDialog.DialogCode.Accepted:
+            if result_code == QDialog.Accepted:
                 result = dialog.get_result()
 
                 if result["modified"] or len(result["labels"]) > 0:
@@ -1489,6 +1614,9 @@ class RightPanel(ColumnPanel):
         self.setup_content()
 
     def setup_content(self):
+        # Button layout (horizontal)
+        button_layout = QHBoxLayout()
+
         # Generate button
         self.generate_btn = QPushButton("🎯 Generate ACC")
         self.generate_btn.setStyleSheet("""
@@ -1508,7 +1636,35 @@ class RightPanel(ColumnPanel):
             }
         """)
         self.generate_btn.clicked.connect(self.on_generate_clicked)
-        self.content_layout.addWidget(self.generate_btn)
+        button_layout.addWidget(self.generate_btn, stretch=2)
+
+        # Show Log button
+        self.show_log_btn = QPushButton("📋 Show Log")
+        self.show_log_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #2196F3;
+                color: white;
+                font-size: 14px;
+                font-weight: bold;
+                padding: 12px;
+                border-radius: 6px;
+            }
+            QPushButton:hover {
+                background-color: #1976D2;
+            }
+            QPushButton:pressed {
+                background-color: #0d47a1;
+            }
+            QPushButton:disabled {
+                background-color: #ccc;
+                color: #666;
+            }
+        """)
+        self.show_log_btn.clicked.connect(self.on_show_log_clicked)
+        self.show_log_btn.setEnabled(False)  # Disabled until ACC is generated
+        button_layout.addWidget(self.show_log_btn, stretch=1)
+
+        self.content_layout.addLayout(button_layout)
 
         # ACC visualization
         self.acc_widget = ACCVisualizationWidget()
@@ -1520,12 +1676,20 @@ class RightPanel(ColumnPanel):
         if isinstance(main_window, MainWindow):
             main_window.generate_acc()
 
+    def on_show_log_clicked(self):
+        """Handle show log button click"""
+        main_window = self.window()
+        if isinstance(main_window, MainWindow):
+            main_window.show_acc_log()
+
 
 class MainWindow(QMainWindow):
     """Main application window with 3-column layout and step-by-step visualization"""
 
     def __init__(self):
         super().__init__()
+        self.acc_log = ""  # Store ACC generation log
+        self.log_handler = None  # Log handler for capturing logs
         self.init_ui()
 
     def init_ui(self):
@@ -1551,7 +1715,7 @@ class MainWindow(QMainWindow):
         right_scroll.setWidget(self.right_panel)
 
         # Create splitter for resizable panels
-        splitter = QSplitter(Qt.Orientation.Horizontal)
+        splitter = QSplitter(Qt.Horizontal)
         splitter.addWidget(left_scroll)
         splitter.addWidget(center_scroll)
         splitter.addWidget(right_scroll)
@@ -1636,8 +1800,33 @@ class MainWindow(QMainWindow):
                 )
                 return
 
-            # Run ACC algorithm step by step (NEW ITERATIVE ALGORITHM)
-            acc_steps = build_acc_from_matrices_iterative(sub_matrix, inc_matrix, unit=1.0, method='average')
+            # Setup log capture
+            log_stream = StringIO()
+            log_handler = logging.StreamHandler(log_stream)
+            log_handler.setLevel(logging.INFO)
+            log_formatter = logging.Formatter('%(levelname)s: %(message)s')
+            log_handler.setFormatter(log_formatter)
+
+            # Get logger from acc_core_new (logger name is 'ACC_Iterative')
+            logger = logging.getLogger('ACC_Iterative')
+            original_level = logger.level
+            logger.setLevel(logging.INFO)
+            logger.addHandler(log_handler)
+
+            try:
+                # Run ACC algorithm step by step (NEW ITERATIVE ALGORITHM)
+                acc_steps = build_acc_from_matrices_iterative(sub_matrix, inc_matrix, unit=1.0, method='average')
+            finally:
+                # Remove handler and restore logger
+                logger.removeHandler(log_handler)
+                logger.setLevel(original_level)
+
+                # Save log
+                self.acc_log = log_stream.getvalue()
+                log_stream.close()
+
+                # Enable Show Log button
+                self.right_panel.show_log_btn.setEnabled(True)
 
             # Visualize with step controls
             self.right_panel.acc_widget.set_acc_steps(acc_steps)
@@ -1688,18 +1877,38 @@ class MainWindow(QMainWindow):
             import traceback
             traceback.print_exc()
 
+    def show_acc_log(self):
+        """Show ACC generation log in a dialog"""
+        if not self.acc_log:
+            QMessageBox.information(
+                self,
+                "No Log Available",
+                "No ACC generation log is available.\nPlease generate ACC first."
+            )
+            return
+
+        # Show log in dialog
+        log_dialog = LogViewerDialog(self.acc_log, self)
+        log_dialog.exec_()
+
 
 def main():
     """Main entry point"""
-    app = QApplication(sys.argv)
-    app.setStyle('Fusion')
-    window = MainWindow()
-    window.show()
-    sys.exit(app.exec())
+    try:
+        app = QApplication(sys.argv)
+        app.setStyle('Fusion')
+        window = MainWindow()
+        window.show()
+        sys.exit(app.exec_())
+    except Exception as e:
+        print(f"ERROR in main(): {e}")
+        import traceback
+        traceback.print_exc()
+        sys.exit(1)
 
 
 if __name__ == "__main__":
     main()
-'''
-pyinstaller --name "AACCViz_v0.0.1_20251112.exe" --onefile --noconsole acc_gui.py
-'''
+
+# Build command:
+# pyinstaller --name "AACCViz_v0.0.1_20251112.exe" --onefile --noconsole acc_gui.py

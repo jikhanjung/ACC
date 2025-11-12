@@ -1,0 +1,41 @@
+========================================
+PyQt6 → PyQt5 전환 완료
+========================================
+
+변경된 파일:
+  ✓ acc_gui.py
+  ✓ requirements.txt
+  ✓ acc_gui_pyqt5.spec (신규)
+  ✓ build_pyqt5.bat (신규)
+  ✓ INSTALL_PYQT5.md (신규)
+
+주요 변경사항:
+  1. Import 변경
+     - PyQt6.QtWidgets → PyQt5.QtWidgets
+     - PyQt6.QtCore → PyQt5.QtCore
+
+  2. Enum 스타일 변경
+     - Qt.Orientation.Horizontal → Qt.Horizontal
+     - Qt.GlobalColor.lightGray → Qt.lightGray
+     - Qt.ItemFlag.ItemIsEditable → Qt.ItemIsEditable
+     - Qt.AlignmentFlag.AlignCenter → Qt.AlignCenter
+     - QSlider.TickPosition.TicksBelow → QSlider.TicksBelow
+
+  3. 패키지 버전
+     - PyQt6>=6.10.0 → PyQt5==5.15.9
+
+다음 단계:
+  1. PyQt5 설치:
+     pip install PyQt5==5.15.9
+
+  2. GUI 테스트:
+     python acc_gui.py
+
+  3. 실행파일 빌드:
+     build_pyqt5.bat
+
+예상 결과:
+  ✓ DLL 로드 에러 없음
+  ✓ 안정적인 실행파일 생성
+  ✓ 모든 기능 정상 작동
+

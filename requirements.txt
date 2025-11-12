@@ -1,15 +1,18 @@
 # ACC (Adaptive Cluster Circle) Requirements
-# PyQt6 GUI Application Dependencies
+# Python 3.11 recommended for full compatibility
+# PyQt5 GUI Application Dependencies
 
 # GUI Framework
-PyQt6>=6.10.0
+PyQt5==5.15.9
+PyQt5-sip==12.12.2
 
-# Scientific Computing
+# Scientific Computing (versions compatible with Python 3.11)
 numpy>=2.0.0
-scipy>=1.16.0
-pandas>=2.3.0
+scipy>=1.11.0
+pandas>=2.0.0
 
-# Visualization
-matplotlib>=3.10.0
+# Visualization (3.9+ for NumPy 2.x compatibility)
+matplotlib>=3.9.0
 
-pyinstaller>=6.10.0
+# Build tool
+pyinstaller>=5.13.0

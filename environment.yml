@@ -1,0 +1,15 @@
+name: ACC_py311
+channels:
+  - defaults
+  - conda-forge
+dependencies:
+  - python=3.11
+  - pyqt=5.15
+  - scipy
+  - pandas
+  - numpy>=2.0
+  - pip
+  - pip:
+    - PyQt5-sip==12.12.2
+    - matplotlib>=3.9.0
+    - pyinstaller==5.13.0
