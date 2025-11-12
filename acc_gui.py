@@ -24,7 +24,7 @@ import matplotlib.pyplot as plt
 from scipy.cluster.hierarchy import dendrogram, linkage
 from scipy.spatial.distance import squareform
 
-from acc_utils import validate_similarity_matrix, dict_matrix_from_dataframe, build_acc_from_matrices
+from acc_utils import validate_similarity_matrix, dict_matrix_from_dataframe, build_acc_from_matrices, build_acc_from_matrices_steps
 from clustering_steps import ClusteringStepManager
 
 
@@ -948,19 +948,72 @@ class StepDendrogramWidget(QWidget):
 
 
 class ACCVisualizationWidget(QWidget):
-    """Widget for displaying ACC concentric circles"""
+    """Widget for displaying ACC concentric circles with step-by-step visualization"""
 
     def __init__(self, parent=None):
         super().__init__(parent)
+        self.acc_steps = []  # List of all steps
+        self.current_step = 0
         self.init_ui()
 
     def init_ui(self):
         layout = QVBoxLayout()
 
+        # Step controls
+        self.step_controls = QWidget()
+        step_layout = QVBoxLayout()
+        step_layout.setContentsMargins(0, 2, 0, 2)
+        step_layout.setSpacing(3)
+
+        # Step label and description in one line
+        step_info_layout = QHBoxLayout()
+        self.step_label = QLabel("Step: 0/0")
+        self.step_label.setStyleSheet("font-weight: bold; color: #1976D2; font-size: 10px;")
+        step_info_layout.addWidget(self.step_label)
+
+        self.step_desc_label = QLabel("Generate ACC to begin")
+        self.step_desc_label.setStyleSheet("font-size: 9px; color: #666;")
+        step_info_layout.addWidget(self.step_desc_label)
+        step_info_layout.addStretch()
+        step_layout.addLayout(step_info_layout)
+
+        # Slider and buttons
+        slider_layout = QHBoxLayout()
+        self.step_slider = QSlider(Qt.Orientation.Horizontal)
+        self.step_slider.setMinimum(0)
+        self.step_slider.setMaximum(0)
+        self.step_slider.setValue(0)
+        self.step_slider.setTickPosition(QSlider.TickPosition.TicksBelow)
+        self.step_slider.setTickInterval(1)
+        self.step_slider.valueChanged.connect(self.on_step_changed)
+        slider_layout.addWidget(self.step_slider)
+
+        # Navigation buttons
+        btn_layout = QHBoxLayout()
+        btn_layout.setSpacing(2)
+        self.prev_btn = QPushButton("◀")
+        self.prev_btn.setMaximumWidth(40)
+        self.prev_btn.clicked.connect(self.prev_step)
+        self.prev_btn.setEnabled(False)
+        btn_layout.addWidget(self.prev_btn)
+
+        self.next_btn = QPushButton("▶")
+        self.next_btn.setMaximumWidth(40)
+        self.next_btn.clicked.connect(self.next_step)
+        self.next_btn.setEnabled(False)
+        btn_layout.addWidget(self.next_btn)
+
+        slider_layout.addLayout(btn_layout)
+        step_layout.addLayout(slider_layout)
+
+        self.step_controls.setLayout(step_layout)
+        self.step_controls.setVisible(False)
+        layout.addWidget(self.step_controls)
+
         # Matplotlib figure
         self.figure = Figure(figsize=(6, 6))
         self.canvas = FigureCanvas(self.figure)
-        layout.addWidget(self.canvas)
+        layout.addWidget(self.canvas, stretch=1)
 
         # Info label
         self.info_label = QLabel("Load both matrices and click Generate")
@@ -969,6 +1022,142 @@ class ACCVisualizationWidget(QWidget):
         layout.addWidget(self.info_label)
 
         self.setLayout(layout)
+
+    def on_step_changed(self, value):
+        """Handle slider value change"""
+        self.current_step = value
+        self.update_step_display()
+
+    def prev_step(self):
+        """Go to previous step"""
+        if self.current_step > 0:
+            self.step_slider.setValue(self.current_step - 1)
+
+    def next_step(self):
+        """Go to next step"""
+        if self.current_step < len(self.acc_steps) - 1:
+            self.step_slider.setValue(self.current_step + 1)
+
+    def update_step_display(self):
+        """Update display for current step"""
+        if not self.acc_steps or self.current_step >= len(self.acc_steps):
+            return
+
+        # Update labels
+        total_steps = len(self.acc_steps) - 1
+        self.step_label.setText(f"Step: {self.current_step}/{total_steps}")
+
+        step_info = self.acc_steps[self.current_step]
+        self.step_desc_label.setText(step_info["description"])
+
+        # Update buttons
+        self.prev_btn.setEnabled(self.current_step > 0)
+        self.next_btn.setEnabled(self.current_step < total_steps)
+
+        # Plot current step
+        self.plot_acc_step(step_info)
+
+    def set_acc_steps(self, steps):
+        """Set ACC steps and display first step"""
+        self.acc_steps = steps
+        if steps:
+            self.step_slider.setMaximum(len(steps) - 1)
+            self.step_slider.setValue(0)
+            self.current_step = 0
+            self.step_controls.setVisible(True)
+            self.update_step_display()
+        else:
+            self.step_controls.setVisible(False)
+
+    def plot_acc_step(self, step_info):
+        """Plot a single ACC step"""
+        self.figure.clear()
+        ax = self.figure.add_subplot(111)
+
+        cluster = step_info["current_cluster"]
+        highlighted_members = step_info["highlighted_members"]
+        action = step_info["action"]
+
+        # Get cluster properties
+        center = cluster.get("center", (0, 0))
+        diameter = cluster["diameter"]
+        radius = diameter / 2.0
+        points = cluster["points"]
+        members = cluster["members"]
+
+        if len(points) == 0:
+            ax.text(0.5, 0.5, 'No points to display',
+                   ha='center', va='center', fontsize=12, color='gray')
+            ax.set_xlim(0, 1)
+            ax.set_ylim(0, 1)
+            ax.axis('off')
+            self.canvas.draw()
+            return
+
+        # Draw cluster circle
+        circle = plt.Circle(center, radius, fill=False,
+                          edgecolor='blue', linewidth=2,
+                          label=f"Cluster ({len(members)} members)")
+        ax.add_patch(circle)
+
+        # Plot member points
+        for member, (x, y) in points.items():
+            # Use different colors for highlighted vs existing members
+            if member in highlighted_members:
+                color = 'red'  # Highlighted (newly added)
+                markersize = 12
+                label_color = 'red'
+            else:
+                color = 'blue'  # Existing
+                markersize = 10
+                label_color = 'black'
+
+            ax.plot(x, y, 'o', markersize=markersize,
+                   color=color,
+                   markeredgecolor='black', markeredgewidth=1.5)
+            ax.text(x, y, f'  {member}', fontsize=10,
+                   va='center', fontweight='bold', color=label_color)
+
+        # Set equal aspect ratio and limits
+        margin = radius * 0.3 if radius > 0 else 1.0
+        ax.set_xlim(-radius - margin, radius + margin)
+        ax.set_ylim(-radius - margin, radius + margin)
+        ax.set_aspect('equal')
+
+        # Add grid and axes
+        ax.grid(True, alpha=0.3)
+        ax.axhline(y=0, color='k', linestyle='--', alpha=0.3)
+        ax.axvline(x=0, color='k', linestyle='--', alpha=0.3)
+        ax.set_xlabel('X', fontsize=10)
+        ax.set_ylabel('Y', fontsize=10)
+
+        # Title with step info
+        title = f'ACC Step {self.current_step}: {action}'
+        ax.set_title(title, fontsize=11, fontweight='bold')
+
+        # Add info text
+        info_lines = [
+            f"Members: {len(members)}",
+            f"Diameter: {diameter:.3f}",
+            f"Theta: {cluster['theta']:.2f}°",
+            f"Action: {action}"
+        ]
+        if highlighted_members:
+            info_lines.append(f"Added: {', '.join(sorted(highlighted_members))}")
+
+        info_text = '\n'.join(info_lines)
+        ax.text(0.02, 0.98, info_text,
+                transform=ax.transAxes,
+                fontsize=9,
+                verticalalignment='top',
+                bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.8))
+
+        self.figure.tight_layout()
+        self.canvas.draw()
+
+        # Update info label
+        self.info_label.setText(f"✓ Step {self.current_step}: {len(members)} members")
+        self.info_label.setStyleSheet("color: green; font-size: 10px;")
 
     def plot_acc_result(self, acc_result):
         """Plot ACC result with multiple concentric circles"""
@@ -1411,33 +1600,36 @@ class MainWindow(QMainWindow):
                 )
                 return
 
-            # Run ACC algorithm
-            acc_result = build_acc_from_matrices(sub_matrix, inc_matrix, unit=1.0, method='average')
+            # Run ACC algorithm step by step
+            acc_steps = build_acc_from_matrices_steps(sub_matrix, inc_matrix, unit=1.0, method='average')
 
-            # Visualize
-            self.right_panel.acc_widget.plot_acc_result(acc_result)
+            # Visualize with step controls
+            self.right_panel.acc_widget.set_acc_steps(acc_steps)
 
-            # Build info message for new structure
-            clusters = acc_result.get('clusters', [])
-            all_members = acc_result.get('all_members', set())
+            # Build info message
+            if acc_steps:
+                final_step = acc_steps[-1]
+                cluster = final_step["current_cluster"]
+                members = cluster["members"]
+                diameter = cluster["diameter"]
+                theta = cluster["theta"]
 
-            # Get diameter range
-            if clusters:
-                diameters = [c['diameter'] for c in clusters]
-                min_d = min(diameters)
-                max_d = max(diameters)
-                diameter_info = f"Diameter range: {min_d:.3f} - {max_d:.3f}"
+                QMessageBox.information(
+                    self,
+                    "Success",
+                    f"ACC Visualization generated!\n\n"
+                    f"Total steps: {len(acc_steps)}\n"
+                    f"Total members: {len(members)}\n"
+                    f"Final diameter: {diameter:.3f}\n"
+                    f"Final theta: {theta:.2f}°\n\n"
+                    f"Use slider to navigate through steps"
+                )
             else:
-                diameter_info = "No clusters"
-
-            QMessageBox.information(
-                self,
-                "Success",
-                f"ACC Visualization generated!\n\n"
-                f"Total members: {len(all_members)}\n"
-                f"Clusters: {len(clusters)}\n"
-                f"{diameter_info}"
-            )
+                QMessageBox.warning(
+                    self,
+                    "No Steps",
+                    "No ACC steps were generated. Check your data."
+                )
 
         except Exception as e:
             QMessageBox.critical(
