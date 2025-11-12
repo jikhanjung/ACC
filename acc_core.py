@@ -337,7 +337,24 @@ def merge_two_clusters(base, new_cluster, inc_matrix):
 
 
 # ------------------------------------------------------------
-# 10. 전체 ACC 빌더 (원본 - 단일 병합 버전)
+# 10. Deep copy utility for cluster snapshots
+# ------------------------------------------------------------
+def deep_copy_cluster(c):
+    """Create a deep copy of cluster dict for step snapshots"""
+    return {
+        "members": set(c["members"]),
+        "sim_sub": c["sim_sub"],
+        "sim_inc": c["sim_inc"],
+        "diameter": c["diameter"],
+        "theta": c["theta"],
+        "center": tuple(c["center"]) if c["center"] else None,
+        "points": dict(c["points"]),
+        "midline_angle": c["midline_angle"]
+    }
+
+
+# ------------------------------------------------------------
+# 11. 전체 ACC 빌더 (원본 - 단일 병합 버전)
 # ------------------------------------------------------------
 def build_acc_merged(sub_dendro: DendroNode,
                      inc_dendro: DendroNode,
@@ -371,7 +388,79 @@ def build_acc_merged(sub_dendro: DendroNode,
 
 
 # ------------------------------------------------------------
-# 11. 새로운 ACC 빌더 (동심원 버전)
+# 11. ACC 빌더 - 단계별 버전
+# ------------------------------------------------------------
+def build_acc_steps(sub_dendro: DendroNode,
+                   inc_dendro: DendroNode,
+                   inc_matrix: dict,
+                   unit=1.0):
+    """
+    Build ACC step by step and return all intermediate states
+
+    Returns:
+        list of dicts, each containing:
+        {
+            "step": int,
+            "action": "initial" | "add_area" | "merge_clusters",
+            "current_cluster": dict (deep copy),
+            "new_cluster": dict | None,
+            "description": str,
+            "highlighted_members": set,
+        }
+    """
+    # 1) 하위 덴드로그램에서 클러스터 뽑기
+    clusters = extract_clusters_from_dendro(sub_dendro)
+
+    # 2) 각 클러스터에 sim_inc, d, theta 부여
+    decorate_clusters(clusters, inc_dendro, inc_matrix, unit=unit)
+
+    # 3) 유사도 높은 순으로 정렬
+    clusters.sort(key=lambda c: c["sim_sub"], reverse=True)
+
+    steps = []
+
+    # 4) 첫 클러스터 배치 - Step 0
+    base = place_first_cluster(clusters[0])
+    steps.append({
+        "step": 0,
+        "action": "initial",
+        "current_cluster": deep_copy_cluster(base),
+        "new_cluster": None,
+        "description": f"Initial cluster with {len(base['members'])} members (sim_sub={base['sim_sub']:.3f})",
+        "highlighted_members": set(base["members"])
+    })
+
+    # 5) 나머지 클러스터 차례로 붙이기
+    for idx, c in enumerate(clusters[1:], start=1):
+        prev_members = set(base["members"])
+
+        # "base 멤버보다 1개만 많으면" → add_area 케이스
+        if len(c["members"]) == len(base["members"]) + 1 and base["members"].issubset(c["members"]):
+            action = "add_area"
+            new_members = c["members"] - base["members"]
+            base = add_area_to_cluster(base, c, inc_matrix)
+            description = f"Adding {new_members} to cluster (sim_sub={c['sim_sub']:.3f})"
+        else:
+            action = "merge_clusters"
+            new_members = c["members"] - base["members"]
+            base = merge_two_clusters(base, c, inc_matrix)
+            description = f"Merging cluster with {len(new_members)} new members (sim_sub={c['sim_sub']:.3f})"
+
+        # 현재 상태 저장
+        steps.append({
+            "step": idx,
+            "action": action,
+            "current_cluster": deep_copy_cluster(base),
+            "new_cluster": deep_copy_cluster(c),
+            "description": description,
+            "highlighted_members": new_members
+        })
+
+    return steps
+
+
+# ------------------------------------------------------------
+# 12. 전체 ACC 빌더 (동심원 버전 - 사용하지 않음)
 # ------------------------------------------------------------
 def build_acc(sub_dendro: DendroNode,
               inc_dendro: DendroNode,

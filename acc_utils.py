@@ -270,3 +270,29 @@ def build_acc_from_matrices(sub_matrix, inc_matrix, unit=1.0, method='average'):
     acc_result = build_acc(sub_dendro, inc_dendro, inc_matrix, unit=unit)
 
     return acc_result
+
+
+def build_acc_from_matrices_steps(sub_matrix, inc_matrix, unit=1.0, method='average'):
+    """
+    Build ACC step by step directly from similarity matrices
+    This returns all intermediate states for visualization
+
+    Args:
+        sub_matrix: subordinate similarity matrix (dict of dict)
+        inc_matrix: inclusive similarity matrix (dict of dict)
+        unit: unit parameter for diameter calculation
+        method: linkage method for hierarchical clustering
+
+    Returns:
+        steps: list of dicts, each containing step information
+    """
+    from acc_core import build_acc_steps, DendroNode
+
+    # Convert matrices to dendrograms
+    sub_dendro, sub_labels = matrix_to_dendrogram(sub_matrix, method=method)
+    inc_dendro, inc_labels = matrix_to_dendrogram(inc_matrix, method=method)
+
+    # Call build_acc_steps which returns all steps
+    steps = build_acc_steps(sub_dendro, inc_dendro, inc_matrix, unit=unit)
+
+    return steps
