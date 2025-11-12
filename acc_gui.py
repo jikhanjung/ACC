@@ -14,7 +14,8 @@ import pandas as pd
 from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QTableWidget, QTableWidgetItem, QPushButton, QFileDialog,
-    QLabel, QSlider, QMessageBox, QScrollArea, QCheckBox, QSplitter
+    QLabel, QSlider, QMessageBox, QScrollArea, QCheckBox, QSplitter,
+    QDialog, QListWidget, QInputDialog, QDialogButtonBox
 )
 from PyQt6.QtCore import Qt, QTimer
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
@@ -25,6 +26,239 @@ from scipy.spatial.distance import squareform
 
 from acc_utils import validate_similarity_matrix, dict_matrix_from_dataframe, build_acc_from_matrices
 from clustering_steps import ClusteringStepManager
+
+
+class AreaListEditorDialog(QDialog):
+    """Dialog for editing the list of areas (row/column labels)"""
+
+    def __init__(self, current_labels, sub_matrix_df, inc_matrix_df, parent=None):
+        super().__init__(parent)
+        self.current_labels = list(current_labels)
+        self.sub_matrix_df = sub_matrix_df.copy()
+        self.inc_matrix_df = inc_matrix_df.copy()
+        self.modified = False
+        self.init_ui()
+
+    def init_ui(self):
+        self.setWindowTitle("Edit Area List")
+        self.setMinimumSize(500, 400)
+
+        layout = QVBoxLayout()
+
+        # Title
+        title = QLabel("<h3>Edit Area List</h3>")
+        title.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        layout.addWidget(title)
+
+        # Info label
+        info = QLabel("Areas must be the same for both Subordinate and Inclusive matrices.")
+        info.setStyleSheet("color: #666; font-size: 10px; font-style: italic;")
+        info.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        layout.addWidget(info)
+
+        # Main content area
+        content_layout = QHBoxLayout()
+
+        # List widget
+        list_container = QVBoxLayout()
+        list_label = QLabel("<b>Current Areas:</b>")
+        list_container.addWidget(list_label)
+
+        self.area_list = QListWidget()
+        self.area_list.addItems(self.current_labels)
+        self.area_list.setSelectionMode(QListWidget.SelectionMode.SingleSelection)
+        list_container.addWidget(self.area_list)
+
+        content_layout.addLayout(list_container, stretch=3)
+
+        # Buttons
+        button_container = QVBoxLayout()
+        button_container.addStretch()
+
+        self.add_btn = QPushButton("➕ Add")
+        self.add_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #4CAF50;
+                color: white;
+                padding: 8px 16px;
+                border-radius: 4px;
+                font-weight: bold;
+            }
+            QPushButton:hover {
+                background-color: #45a049;
+            }
+        """)
+        self.add_btn.clicked.connect(self.add_area)
+        button_container.addWidget(self.add_btn)
+
+        self.edit_btn = QPushButton("✏️ Edit")
+        self.edit_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #2196F3;
+                color: white;
+                padding: 8px 16px;
+                border-radius: 4px;
+                font-weight: bold;
+            }
+            QPushButton:hover {
+                background-color: #1976D2;
+            }
+        """)
+        self.edit_btn.clicked.connect(self.edit_area)
+        button_container.addWidget(self.edit_btn)
+
+        self.delete_btn = QPushButton("🗑️ Delete")
+        self.delete_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #f44336;
+                color: white;
+                padding: 8px 16px;
+                border-radius: 4px;
+                font-weight: bold;
+            }
+            QPushButton:hover {
+                background-color: #da190b;
+            }
+        """)
+        self.delete_btn.clicked.connect(self.delete_area)
+        button_container.addWidget(self.delete_btn)
+
+        button_container.addStretch()
+        content_layout.addLayout(button_container, stretch=1)
+
+        layout.addLayout(content_layout)
+
+        # Dialog buttons
+        button_box = QDialogButtonBox(
+            QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
+        )
+        button_box.accepted.connect(self.accept)
+        button_box.rejected.connect(self.reject)
+        layout.addWidget(button_box)
+
+        self.setLayout(layout)
+
+    def add_area(self):
+        """Add a new area"""
+        text, ok = QInputDialog.getText(
+            self,
+            "Add Area",
+            "Enter new area name:",
+        )
+
+        if ok and text:
+            # Validate
+            text = text.strip()
+            if not text:
+                QMessageBox.warning(self, "Invalid Name", "Area name cannot be empty or whitespace.")
+                return
+
+            if text in self.current_labels:
+                QMessageBox.warning(self, "Duplicate Name", f"Area '{text}' already exists.")
+                return
+
+            # Add to list
+            self.current_labels.append(text)
+            self.area_list.addItem(text)
+
+            # Add to both dataframes (new row and column with default value 0.5, diagonal 1.0)
+            n = len(self.current_labels)
+
+            # Create new row/column data
+            new_row_sub = pd.Series([0.5] * n, index=self.current_labels)
+            new_row_sub[text] = 1.0  # Diagonal
+
+            new_row_inc = pd.Series([0.5] * n, index=self.current_labels)
+            new_row_inc[text] = 1.0  # Diagonal
+
+            # Add to subordinate matrix
+            self.sub_matrix_df = pd.concat([self.sub_matrix_df, pd.DataFrame([new_row_sub], index=[text])])
+            self.sub_matrix_df[text] = new_row_sub
+
+            # Add to inclusive matrix
+            self.inc_matrix_df = pd.concat([self.inc_matrix_df, pd.DataFrame([new_row_inc], index=[text])])
+            self.inc_matrix_df[text] = new_row_inc
+
+            self.modified = True
+
+    def edit_area(self):
+        """Edit selected area name"""
+        selected_items = self.area_list.selectedItems()
+        if not selected_items:
+            QMessageBox.information(self, "No Selection", "Please select an area to edit.")
+            return
+
+        current_item = selected_items[0]
+        old_name = current_item.text()
+        old_index = self.current_labels.index(old_name)
+
+        text, ok = QInputDialog.getText(
+            self,
+            "Edit Area",
+            "Enter new area name:",
+            text=old_name
+        )
+
+        if ok and text:
+            # Validate
+            text = text.strip()
+            if not text:
+                QMessageBox.warning(self, "Invalid Name", "Area name cannot be empty or whitespace.")
+                return
+
+            if text != old_name and text in self.current_labels:
+                QMessageBox.warning(self, "Duplicate Name", f"Area '{text}' already exists.")
+                return
+
+            # Update list
+            self.current_labels[old_index] = text
+            current_item.setText(text)
+
+            # Update dataframes - rename both index and column
+            self.sub_matrix_df.rename(index={old_name: text}, columns={old_name: text}, inplace=True)
+            self.inc_matrix_df.rename(index={old_name: text}, columns={old_name: text}, inplace=True)
+
+            self.modified = True
+
+    def delete_area(self):
+        """Delete selected area"""
+        selected_items = self.area_list.selectedItems()
+        if not selected_items:
+            QMessageBox.information(self, "No Selection", "Please select an area to delete.")
+            return
+
+        area_name = selected_items[0].text()
+
+        # Confirm deletion
+        reply = QMessageBox.question(
+            self,
+            "Confirm Deletion",
+            f"Are you sure you want to delete area '{area_name}'?\n\n"
+            f"This will remove it from both matrices and cannot be undone.",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No
+        )
+
+        if reply == QMessageBox.StandardButton.Yes:
+            # Remove from list
+            index = self.current_labels.index(area_name)
+            self.current_labels.pop(index)
+            self.area_list.takeItem(index)
+
+            # Remove from both dataframes
+            self.sub_matrix_df.drop(index=area_name, columns=area_name, inplace=True)
+            self.inc_matrix_df.drop(index=area_name, columns=area_name, inplace=True)
+
+            self.modified = True
+
+    def get_result(self):
+        """Get the modified data"""
+        return {
+            "labels": self.current_labels,
+            "sub_matrix": self.sub_matrix_df,
+            "inc_matrix": self.inc_matrix_df,
+            "modified": self.modified
+        }
 
 
 class StepMatrixWidget(QWidget):
@@ -41,6 +275,7 @@ class StepMatrixWidget(QWidget):
         self.preview_clusters = None  # (idx_i, idx_j) to highlight
         self.highlight_merged = False  # Whether to highlight just-merged cluster in yellow
         self.merged_cluster_idx = None  # Index of just-merged cluster
+        self.updating_mirror = False  # Flag to prevent recursive updates
         self.init_ui()
 
     def init_ui(self):
@@ -140,6 +375,7 @@ class StepMatrixWidget(QWidget):
         # Table widget (no max height to allow it to expand)
         self.table = QTableWidget()
         self.table.setMinimumHeight(200)
+        self.table.itemChanged.connect(self.on_item_changed)
         layout.addWidget(self.table, stretch=1)  # Allow table to expand
 
         # Info label (compact)
@@ -370,7 +606,7 @@ class StepMatrixWidget(QWidget):
         for i in range(n):
             for j in range(n):
                 if i < j:
-                    # Upper triangle: show values
+                    # Upper triangle: show values (editable)
                     value = matrix[i, j]
                     item = QTableWidgetItem(f"{value:.3f}")
                     item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -392,15 +628,25 @@ class StepMatrixWidget(QWidget):
                     if should_highlight:
                         item.setBackground(highlight_color)
 
+                    # Upper triangle is editable
+                    item.setFlags(item.flags() | Qt.ItemFlag.ItemIsEditable)
                     self.table.setItem(i, j, item)
                 elif i == j:
-                    # Diagonal: show but with gray background and no number
-                    item = QTableWidgetItem("")
+                    # Diagonal: read-only with gray background (always 1.0)
+                    item = QTableWidgetItem("1.000")
+                    item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
                     item.setBackground(Qt.GlobalColor.lightGray)
+                    item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsEditable)
+                    item.setToolTip("Diagonal cells are always 1.0 and cannot be edited")
                     self.table.setItem(i, j, item)
                 else:
-                    # Lower triangle: empty
-                    item = QTableWidgetItem("")
+                    # Lower triangle: read-only mirror of upper triangle
+                    value = matrix[i, j]
+                    item = QTableWidgetItem(f"{value:.3f}")
+                    item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+                    item.setBackground(Qt.GlobalColor.lightGray)
+                    item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsEditable)
+                    item.setToolTip("Lower triangle is read-only (mirrored from upper triangle)")
                     self.table.setItem(i, j, item)
 
         # Adjust column widths
@@ -421,6 +667,102 @@ class StepMatrixWidget(QWidget):
     def is_loaded(self):
         """Check if matrix is loaded"""
         return self.matrix_data is not None
+
+    def on_item_changed(self, item):
+        """Handle item change - validate and mirror to lower triangle"""
+        if self.updating_mirror:
+            return
+
+        # Only process if we're at step 0 (original matrix)
+        if self.current_step != 0:
+            return
+
+        row = item.row()
+        col = item.column()
+
+        # Only process upper triangle edits
+        if row >= col:
+            return
+
+        # Validate input
+        try:
+            value = float(item.text())
+            if value < 0.0 or value > 1.0:
+                QMessageBox.warning(
+                    self,
+                    "Invalid Value",
+                    f"Similarity values must be between 0.0 and 1.0\nYou entered: {value}"
+                )
+                # Restore original value
+                if self.matrix_data is not None:
+                    self.updating_mirror = True
+                    item.setText(f"{self.matrix_data.iloc[row, col]:.3f}")
+                    self.updating_mirror = False
+                return
+        except ValueError:
+            QMessageBox.warning(
+                self,
+                "Invalid Input",
+                f"Please enter a numeric value between 0.0 and 1.0\nYou entered: '{item.text()}'"
+            )
+            # Restore original value
+            if self.matrix_data is not None:
+                self.updating_mirror = True
+                item.setText(f"{self.matrix_data.iloc[row, col]:.3f}")
+                self.updating_mirror = False
+            return
+
+        # Update the underlying data
+        if self.matrix_data is not None:
+            self.matrix_data.iloc[row, col] = value
+            self.matrix_data.iloc[col, row] = value  # Mirror to lower triangle
+
+            # Update the step manager with new matrix
+            self.step_manager = ClusteringStepManager(
+                self.matrix_data.values,
+                self.matrix_data.index.tolist()
+            )
+
+            # Update the mirror cell in the table
+            self.updating_mirror = True
+            mirror_item = self.table.item(col, row)
+            if mirror_item:
+                mirror_item.setText(f"{value:.3f}")
+            self.updating_mirror = False
+
+            # Notify parent to update dendrograms
+            if hasattr(self.parent(), 'on_matrix_loaded'):
+                self.parent().on_matrix_loaded()
+
+    def update_matrix(self, new_matrix_df):
+        """Update matrix with new data and labels"""
+        self.matrix_data = new_matrix_df
+
+        # Recreate step manager
+        self.step_manager = ClusteringStepManager(
+            new_matrix_df.values,
+            new_matrix_df.index.tolist()
+        )
+
+        # Reset to step 0
+        num_steps = self.step_manager.get_num_steps()
+        self.step_slider.setMaximum(num_steps - 1)
+        self.step_slider.setValue(0)
+        self.current_step = 0
+
+        # Show step controls
+        self.step_controls.setVisible(True)
+        self.update_step_display()
+
+        # Update info label
+        self.info_label.setText(f"✓ Updated: {new_matrix_df.shape[0]}×{new_matrix_df.shape[1]}, {num_steps} steps")
+        self.info_label.setStyleSheet("color: green; font-size: 10px;")
+
+    def get_labels(self):
+        """Get current labels"""
+        if self.matrix_data is not None:
+            return self.matrix_data.index.tolist()
+        return []
 
 
 class StepDendrogramWidget(QWidget):
@@ -722,6 +1064,24 @@ class LeftPanel(ColumnPanel):
         sub_header_layout.addWidget(sub_label)
         sub_header_layout.addStretch()
 
+        # Edit Area List button (shared for both matrices)
+        self.edit_areas_btn = QPushButton("Edit Area List")
+        self.edit_areas_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #9C27B0;
+                color: white;
+                padding: 6px 12px;
+                border-radius: 3px;
+                font-size: 11px;
+            }
+            QPushButton:hover {
+                background-color: #7B1FA2;
+            }
+        """)
+        self.edit_areas_btn.clicked.connect(self.edit_area_list)
+        self.edit_areas_btn.setEnabled(False)  # Disabled until both matrices loaded
+        sub_header_layout.addWidget(self.edit_areas_btn)
+
         self.sub_matrix_widget = StepMatrixWidget("Subordinate", show_header=False)
         sub_header_layout.addWidget(self.sub_matrix_widget.load_btn)
         self.content_layout.addLayout(sub_header_layout)
@@ -749,6 +1109,10 @@ class LeftPanel(ColumnPanel):
 
     def on_matrix_loaded(self):
         """Called when a matrix is loaded"""
+        # Enable Edit Area List button if both matrices are loaded
+        if self.sub_matrix_widget.is_loaded() and self.inc_matrix_widget.is_loaded():
+            self.edit_areas_btn.setEnabled(True)
+
         main_window = self.window()
         if isinstance(main_window, MainWindow):
             main_window.update_dendrograms()
@@ -758,6 +1122,58 @@ class LeftPanel(ColumnPanel):
         main_window = self.window()
         if isinstance(main_window, MainWindow):
             main_window.update_dendrogram_steps()
+
+    def edit_area_list(self):
+        """Open dialog to edit area list"""
+        # Check if both matrices are loaded
+        if not self.sub_matrix_widget.is_loaded() or not self.inc_matrix_widget.is_loaded():
+            QMessageBox.warning(
+                self,
+                "Missing Data",
+                "Please load both Subordinate and Inclusive matrices first."
+            )
+            return
+
+        # Get current labels (should be same for both)
+        sub_labels = self.sub_matrix_widget.get_labels()
+        inc_labels = self.inc_matrix_widget.get_labels()
+
+        # Verify they match
+        if sub_labels != inc_labels:
+            QMessageBox.warning(
+                self,
+                "Label Mismatch",
+                "Subordinate and Inclusive matrices have different labels.\n"
+                "Please reload the matrices to ensure consistency."
+            )
+            return
+
+        # Get current matrices
+        sub_df = self.sub_matrix_widget.get_dataframe()
+        inc_df = self.inc_matrix_widget.get_dataframe()
+
+        # Open dialog
+        dialog = AreaListEditorDialog(sub_labels, sub_df, inc_df, self)
+        if dialog.exec() == QDialog.DialogCode.Accepted:
+            result = dialog.get_result()
+
+            if result["modified"]:
+                # Update both matrices
+                self.sub_matrix_widget.update_matrix(result["sub_matrix"])
+                self.inc_matrix_widget.update_matrix(result["inc_matrix"])
+
+                # Notify main window to update dendrograms
+                main_window = self.window()
+                if isinstance(main_window, MainWindow):
+                    main_window.update_dendrograms()
+
+                QMessageBox.information(
+                    self,
+                    "Success",
+                    f"Area list updated successfully!\n\n"
+                    f"Total areas: {len(result['labels'])}\n"
+                    f"Matrix size: {result['sub_matrix'].shape[0]}×{result['sub_matrix'].shape[1]}"
+                )
 
 
 class CenterPanel(ColumnPanel):
