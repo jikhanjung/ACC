@@ -717,7 +717,7 @@ class StepMatrixWidget(QWidget):
         # Update the underlying data
         if self.matrix_data is not None:
             self.matrix_data.iloc[row, col] = value
-            self.matrix_data.iloc[col, row] = value  # Mirror to lower triangle
+            self.matrix_data.iloc[col, row] = value  # Mirror to lower triangle (data only)
 
             # Update the step manager with new matrix
             self.step_manager = ClusteringStepManager(
@@ -725,12 +725,7 @@ class StepMatrixWidget(QWidget):
                 self.matrix_data.index.tolist()
             )
 
-            # Update the mirror cell in the table
-            self.updating_mirror = True
-            mirror_item = self.table.item(col, row)
-            if mirror_item:
-                mirror_item.setText(f"{value:.3f}")
-            self.updating_mirror = False
+            # Note: Lower triangle cells remain empty (not updated visually)
 
             # Notify parent to update dendrograms
             if hasattr(self.parent(), 'on_matrix_loaded'):
