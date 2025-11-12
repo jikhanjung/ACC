@@ -161,23 +161,28 @@ class AreaListEditorDialog(QDialog):
             self.current_labels.append(text)
             self.area_list.addItem(text)
 
-            # Add to both dataframes (new row and column with default value 0.5, diagonal 1.0)
             n = len(self.current_labels)
 
-            # Create new row/column data
-            new_row_sub = pd.Series([0.5] * n, index=self.current_labels)
-            new_row_sub[text] = 1.0  # Diagonal
+            if n == 1:
+                # First area - create new 1x1 matrices
+                self.sub_matrix_df = pd.DataFrame([[1.0]], index=[text], columns=[text])
+                self.inc_matrix_df = pd.DataFrame([[1.0]], index=[text], columns=[text])
+            else:
+                # Add to existing dataframes (new row and column with default value 0.5, diagonal 1.0)
+                # Create new row/column data
+                new_row_sub = pd.Series([0.5] * n, index=self.current_labels)
+                new_row_sub[text] = 1.0  # Diagonal
 
-            new_row_inc = pd.Series([0.5] * n, index=self.current_labels)
-            new_row_inc[text] = 1.0  # Diagonal
+                new_row_inc = pd.Series([0.5] * n, index=self.current_labels)
+                new_row_inc[text] = 1.0  # Diagonal
 
-            # Add to subordinate matrix
-            self.sub_matrix_df = pd.concat([self.sub_matrix_df, pd.DataFrame([new_row_sub], index=[text])])
-            self.sub_matrix_df[text] = new_row_sub
+                # Add to subordinate matrix
+                self.sub_matrix_df = pd.concat([self.sub_matrix_df, pd.DataFrame([new_row_sub], index=[text])])
+                self.sub_matrix_df[text] = new_row_sub
 
-            # Add to inclusive matrix
-            self.inc_matrix_df = pd.concat([self.inc_matrix_df, pd.DataFrame([new_row_inc], index=[text])])
-            self.inc_matrix_df[text] = new_row_inc
+                # Add to inclusive matrix
+                self.inc_matrix_df = pd.concat([self.inc_matrix_df, pd.DataFrame([new_row_inc], index=[text])])
+                self.inc_matrix_df[text] = new_row_inc
 
             self.modified = True
 
@@ -632,21 +637,18 @@ class StepMatrixWidget(QWidget):
                     item.setFlags(item.flags() | Qt.ItemFlag.ItemIsEditable)
                     self.table.setItem(i, j, item)
                 elif i == j:
-                    # Diagonal: read-only with gray background (always 1.0)
-                    item = QTableWidgetItem("1.000")
-                    item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+                    # Diagonal: empty with gray background
+                    item = QTableWidgetItem("")
                     item.setBackground(Qt.GlobalColor.lightGray)
                     item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsEditable)
-                    item.setToolTip("Diagonal cells are always 1.0 and cannot be edited")
+                    item.setToolTip("Diagonal cells are always 1.0 (not shown)")
                     self.table.setItem(i, j, item)
                 else:
-                    # Lower triangle: read-only mirror of upper triangle
-                    value = matrix[i, j]
-                    item = QTableWidgetItem(f"{value:.3f}")
-                    item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+                    # Lower triangle: empty with gray background
+                    item = QTableWidgetItem("")
                     item.setBackground(Qt.GlobalColor.lightGray)
                     item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsEditable)
-                    item.setToolTip("Lower triangle is read-only (mirrored from upper triangle)")
+                    item.setToolTip("Lower triangle is mirrored from upper triangle (not shown)")
                     self.table.setItem(i, j, item)
 
         # Adjust column widths
@@ -737,6 +739,30 @@ class StepMatrixWidget(QWidget):
     def update_matrix(self, new_matrix_df):
         """Update matrix with new data and labels"""
         self.matrix_data = new_matrix_df
+
+        # Check if matrix is valid (at least 2 areas for clustering)
+        if new_matrix_df.shape[0] < 2:
+            # Not enough data for clustering
+            self.step_controls.setVisible(False)
+            self.table.clear()
+            if new_matrix_df.shape[0] == 1:
+                # Show single area
+                label = new_matrix_df.index[0]
+                self.table.setRowCount(1)
+                self.table.setColumnCount(1)
+                self.table.setHorizontalHeaderLabels([label])
+                self.table.setVerticalHeaderLabels([label])
+                item = QTableWidgetItem("")
+                item.setBackground(Qt.GlobalColor.lightGray)
+                item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsEditable)
+                item.setToolTip("Diagonal cell (always 1.0)")
+                self.table.setItem(0, 0, item)
+                self.info_label.setText(f"✓ Updated: 1 area (need at least 2 for clustering)")
+                self.info_label.setStyleSheet("color: orange; font-size: 10px;")
+            else:
+                self.info_label.setText("No data")
+                self.info_label.setStyleSheet("color: gray; font-style: italic; font-size: 9px;")
+            return
 
         # Recreate step manager
         self.step_manager = ClusteringStepManager(
@@ -1079,7 +1105,7 @@ class LeftPanel(ColumnPanel):
             }
         """)
         self.edit_areas_btn.clicked.connect(self.edit_area_list)
-        self.edit_areas_btn.setEnabled(False)  # Disabled until both matrices loaded
+        # Always enabled - can create area list from scratch
         sub_header_layout.addWidget(self.edit_areas_btn)
 
         self.sub_matrix_widget = StepMatrixWidget("Subordinate", show_header=False)
@@ -1109,10 +1135,6 @@ class LeftPanel(ColumnPanel):
 
     def on_matrix_loaded(self):
         """Called when a matrix is loaded"""
-        # Enable Edit Area List button if both matrices are loaded
-        if self.sub_matrix_widget.is_loaded() and self.inc_matrix_widget.is_loaded():
-            self.edit_areas_btn.setEnabled(True)
-
         main_window = self.window()
         if isinstance(main_window, MainWindow):
             main_window.update_dendrograms()
@@ -1125,55 +1147,94 @@ class LeftPanel(ColumnPanel):
 
     def edit_area_list(self):
         """Open dialog to edit area list"""
-        # Check if both matrices are loaded
-        if not self.sub_matrix_widget.is_loaded() or not self.inc_matrix_widget.is_loaded():
-            QMessageBox.warning(
-                self,
-                "Missing Data",
-                "Please load both Subordinate and Inclusive matrices first."
-            )
-            return
+        try:
+            print("Edit Area List button clicked")  # Debug
 
-        # Get current labels (should be same for both)
-        sub_labels = self.sub_matrix_widget.get_labels()
-        inc_labels = self.inc_matrix_widget.get_labels()
+            # Check if matrices are loaded
+            sub_loaded = self.sub_matrix_widget.is_loaded()
+            inc_loaded = self.inc_matrix_widget.is_loaded()
 
-        # Verify they match
-        if sub_labels != inc_labels:
-            QMessageBox.warning(
-                self,
-                "Label Mismatch",
-                "Subordinate and Inclusive matrices have different labels.\n"
-                "Please reload the matrices to ensure consistency."
-            )
-            return
+            if sub_loaded and inc_loaded:
+                # Both loaded - edit existing
+                print("Both matrices loaded - editing existing")  # Debug
 
-        # Get current matrices
-        sub_df = self.sub_matrix_widget.get_dataframe()
-        inc_df = self.inc_matrix_widget.get_dataframe()
+                # Get current labels (should be same for both)
+                sub_labels = self.sub_matrix_widget.get_labels()
+                inc_labels = self.inc_matrix_widget.get_labels()
 
-        # Open dialog
-        dialog = AreaListEditorDialog(sub_labels, sub_df, inc_df, self)
-        if dialog.exec() == QDialog.DialogCode.Accepted:
-            result = dialog.get_result()
+                print(f"Sub labels: {sub_labels}")  # Debug
+                print(f"Inc labels: {inc_labels}")  # Debug
 
-            if result["modified"]:
-                # Update both matrices
-                self.sub_matrix_widget.update_matrix(result["sub_matrix"])
-                self.inc_matrix_widget.update_matrix(result["inc_matrix"])
+                # Verify they match
+                if sub_labels != inc_labels:
+                    print("Label mismatch detected")  # Debug
+                    QMessageBox.warning(
+                        self,
+                        "Label Mismatch",
+                        "Subordinate and Inclusive matrices have different labels.\n"
+                        "Please reload the matrices to ensure consistency."
+                    )
+                    return
 
-                # Notify main window to update dendrograms
-                main_window = self.window()
-                if isinstance(main_window, MainWindow):
-                    main_window.update_dendrograms()
+                # Get current matrices
+                sub_df = self.sub_matrix_widget.get_dataframe()
+                inc_df = self.inc_matrix_widget.get_dataframe()
 
-                QMessageBox.information(
+            elif sub_loaded or inc_loaded:
+                # Only one loaded - warn user
+                print("Only one matrix loaded")  # Debug
+                QMessageBox.warning(
                     self,
-                    "Success",
-                    f"Area list updated successfully!\n\n"
-                    f"Total areas: {len(result['labels'])}\n"
-                    f"Matrix size: {result['sub_matrix'].shape[0]}×{result['sub_matrix'].shape[1]}"
+                    "Incomplete Data",
+                    "Only one matrix is loaded. Please load both matrices or start from scratch.\n\n"
+                    "To start from scratch, close both matrices and use Edit Area List."
                 )
+                return
+
+            else:
+                # Neither loaded - start from scratch
+                print("No matrices loaded - starting from scratch")  # Debug
+                sub_labels = []
+                sub_df = pd.DataFrame()
+                inc_df = pd.DataFrame()
+
+            print("Creating dialog...")  # Debug
+            # Open dialog
+            dialog = AreaListEditorDialog(sub_labels, sub_df, inc_df, self)
+            print("Dialog created, executing...")  # Debug
+
+            result_code = dialog.exec()
+            print(f"Dialog closed with code: {result_code}")  # Debug
+
+            if result_code == QDialog.DialogCode.Accepted:
+                result = dialog.get_result()
+
+                if result["modified"] or len(result["labels"]) > 0:
+                    # Update both matrices
+                    self.sub_matrix_widget.update_matrix(result["sub_matrix"])
+                    self.inc_matrix_widget.update_matrix(result["inc_matrix"])
+
+                    # Notify main window to update dendrograms
+                    main_window = self.window()
+                    if isinstance(main_window, MainWindow):
+                        main_window.update_dendrograms()
+
+                    QMessageBox.information(
+                        self,
+                        "Success",
+                        f"Area list {'created' if not sub_loaded and not inc_loaded else 'updated'} successfully!\n\n"
+                        f"Total areas: {len(result['labels'])}\n"
+                        f"Matrix size: {result['sub_matrix'].shape[0]}×{result['sub_matrix'].shape[1]}"
+                    )
+        except Exception as e:
+            print(f"Error in edit_area_list: {e}")  # Debug
+            import traceback
+            traceback.print_exc()
+            QMessageBox.critical(
+                self,
+                "Error",
+                f"An error occurred while opening the Area List Editor:\n{str(e)}"
+            )
 
 
 class CenterPanel(ColumnPanel):

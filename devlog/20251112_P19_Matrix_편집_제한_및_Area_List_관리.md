@@ -275,8 +275,8 @@ def update_matrix(self, labels, matrix_df):
 - `StepMatrixWidget.init_ui()`: `itemChanged` 시그널 연결
 - `StepMatrixWidget.populate_table()`: 셀 편집 플래그 설정
   - Upper triangle: 편집 가능 (ItemIsEditable)
-  - Diagonal: 편집 불가, 회색 배경, 툴팁 추가
-  - Lower triangle: 편집 불가, 회색 배경, 툴팁 추가
+  - Diagonal: 빈 칸, 회색 배경, 툴팁 "always 1.0 (not shown)"
+  - Lower triangle: 빈 칸, 회색 배경, 툴팁 "mirrored from upper triangle (not shown)"
 - `StepMatrixWidget.on_item_changed()`: 새 메서드
   - 값 검증 (0.0 ~ 1.0 범위)
   - Lower triangle 자동 업데이트
@@ -352,6 +352,57 @@ All tests passed! ✓
 3. 다이얼로그에서 Add/Edit/Delete 수행
 4. OK 버튼 클릭
 5. 두 matrix 모두 자동 업데이트
+
+## 추가 구현: 빈 상태에서 Area List 생성 (P19 Update)
+
+### 문제
+- 초기 구현에서는 두 matrix가 모두 로드되어야만 "Edit Area List" 버튼이 활성화됨
+- 사용자가 CSV 없이 처음부터 area list를 만들 수 없음
+
+### 해결 방법
+1. **버튼 항상 활성화**:
+   - `edit_areas_btn.setEnabled(False)` 제거
+   - 주석: "Always enabled - can create area list from scratch"
+
+2. **빈 상태 처리**:
+   - `edit_area_list()` 메서드 수정
+   - 두 matrix 모두 로드됨: 기존 편집
+   - 하나만 로드됨: 경고 메시지
+   - 둘 다 로드 안 됨: 빈 상태로 시작 (labels=[], df=empty)
+
+3. **첫 번째 area 추가**:
+   - `AreaListEditorDialog.add_area()` 수정
+   - n == 1일 때: 1×1 matrix 생성 (diagonal 1.0)
+   - n > 1일 때: 기존 로직 (새 row/column 추가)
+
+4. **단일 area 표시**:
+   - `StepMatrixWidget.update_matrix()` 수정
+   - shape[0] < 2: clustering 불가 상태
+   - shape[0] == 1: 단일 area 표시, 경고 메시지
+   - shape[0] >= 2: 정상 clustering
+
+### 테스트
+`test_empty_area_list.py` 생성:
+```
+✓ Test 1: 빈 상태에서 첫 area 생성 (1×1 matrix)
+✓ Test 2: 두 번째 area 추가 (2×2 matrix)
+✓ Test 3: 여러 area 추가 (5×5 matrix)
+```
+
+모든 테스트 통과! ✓
+
+### 사용 시나리오
+```
+1. GUI 실행 (matrix 없음)
+2. "Edit Area List" 버튼 클릭
+3. "Add" 버튼으로 area 추가:
+   - J (1×1 matrix 생성)
+   - T (2×2 matrix로 확장)
+   - Y, N, O (계속 확장)
+4. "OK" 클릭
+5. 두 matrix에 자동으로 로드됨
+6. Dendrogram 자동 생성
+```
 
 ## 다음 단계
 
