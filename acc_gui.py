@@ -1235,43 +1235,53 @@ class ACCVisualizationWidget(QWidget):
             self.canvas.draw()
             return
 
-        # Plot each cluster
-        cluster_colors = ['blue', 'green', 'purple', 'orange', 'brown']
-        total_members = 0
+        # STEP 1: Collect all unique radii from all clusters
+        import math
+        all_radii = set()
+        all_points = {}
 
-        for idx, cluster in enumerate(clusters):
-            center = cluster.get("center", (0, 0))
-            diameter = cluster.get("diameter", 0)
-            radius = diameter / 2.0
+        for cluster in clusters:
             points = cluster.get("points", {})
-            members = cluster.get("members", set())
-            total_members += len(members)
 
-            # Draw cluster circle
-            circle_color = cluster_colors[idx % len(cluster_colors)]
-            circle = plt.Circle(center, radius, fill=False,
-                              edgecolor=circle_color, linewidth=2, linestyle='--',
+            for member, (x, y) in points.items():
+                # Calculate actual radius from origin (0, 0)
+                # All points in ACC lie on concentric circles centered at origin
+                actual_radius = math.sqrt(x**2 + y**2)
+                all_radii.add(round(actual_radius, 3))
+                all_points[member] = (x, y, actual_radius)
+
+        # STEP 2: Draw concentric circles for each unique radius
+        sorted_radii = sorted(all_radii)
+        circle_colors_concentric = plt.cm.rainbow(np.linspace(0, 1, len(sorted_radii)))
+
+        for idx, radius in enumerate(sorted_radii):
+            circle = plt.Circle((0, 0), radius, fill=False,
+                              edgecolor=circle_colors_concentric[idx],
+                              linewidth=2,
+                              linestyle='-',
                               alpha=0.6,
-                              label=f"Cluster {idx+1} ({len(members)} members)")
+                              label=f"Circle r={radius:.3f}")
             ax.add_patch(circle)
 
-            # Plot member points
-            for member, (x, y) in points.items():
-                # Use different colors for highlighted vs existing members
-                if member in highlighted_members:
-                    color = 'red'  # Highlighted (newly added)
-                    markersize = 12
-                    label_color = 'red'
-                else:
-                    color = circle_color  # Match cluster color
-                    markersize = 10
-                    label_color = 'black'
+        # STEP 3: Plot member points
+        total_members = sum(len(c.get("members", set())) for c in clusters)
 
-                ax.plot(x, y, 'o', markersize=markersize,
-                       color=color,
-                       markeredgecolor='black', markeredgewidth=1.5)
-                ax.text(x, y, f'  {member}', fontsize=10,
-                       va='center', fontweight='bold', color=label_color)
+        for member, (x, y, r) in all_points.items():
+            # Use different colors for highlighted vs existing members
+            if member in highlighted_members:
+                color = 'red'  # Highlighted (newly added)
+                markersize = 12
+                label_color = 'red'
+            else:
+                color = 'darkblue'
+                markersize = 10
+                label_color = 'black'
+
+            ax.plot(x, y, 'o', markersize=markersize,
+                   color=color,
+                   markeredgecolor='black', markeredgewidth=1.5)
+            ax.text(x, y + 0.08, f'{member}', fontsize=10,
+                   ha='center', fontweight='bold', color=label_color)
 
         # Set equal aspect ratio and limits
         margin = max_radius * 0.5 if max_radius > 0 else 1.0
@@ -1317,7 +1327,7 @@ class ACCVisualizationWidget(QWidget):
         self.canvas.draw()
 
         # Update info label
-        self.info_label.setText(f"✓ Step {self.current_step}: {len(members)} members")
+        self.info_label.setText(f"✓ Step {self.current_step}: {total_members} members")
         self.info_label.setStyleSheet("color: green; font-size: 10px;")
 
     def plot_acc_result(self, acc_result):
@@ -1338,37 +1348,40 @@ class ACCVisualizationWidget(QWidget):
             self.canvas.draw()
             return
 
-        # Generate colors for clusters
-        cluster_colors = plt.cm.Set3(np.linspace(0, 1, len(clusters)))
+        # STEP 1: Collect all unique radii from all clusters
+        all_radii = set()
+        all_points = {}
 
-        # Track which members we've plotted (to avoid duplicates)
-        plotted_members = set()
-
-        # Draw each cluster as a separate circle
-        for cluster_idx, cluster in enumerate(clusters):
-            center = cluster.get("center", (0, 0))
-            diameter = cluster["diameter"]
-            radius = diameter / 2.0
+        for cluster in clusters:
             points = cluster["points"]
-            members = cluster["members"]
 
-            # Draw cluster circle
-            circle = plt.Circle(center, radius, fill=False,
-                              edgecolor=cluster_colors[cluster_idx],
+            for member, (x, y) in points.items():
+                # Calculate actual radius from origin (0, 0)
+                # All points in ACC lie on concentric circles centered at origin
+                actual_radius = math.sqrt(x**2 + y**2)
+                all_radii.add(round(actual_radius, 3))  # Round to avoid floating point issues
+                all_points[member] = (x, y, actual_radius)
+
+        # STEP 2: Draw concentric circles for each unique radius
+        sorted_radii = sorted(all_radii)
+        circle_colors = plt.cm.rainbow(np.linspace(0, 1, len(sorted_radii)))
+
+        for idx, radius in enumerate(sorted_radii):
+            circle = plt.Circle((0, 0), radius, fill=False,
+                              edgecolor=circle_colors[idx],
                               linewidth=2,
-                              label=f"Cluster {cluster_idx+1} ({len(members)} members)")
+                              linestyle='-',
+                              alpha=0.7,
+                              label=f"Circle r={radius:.3f}")
             ax.add_patch(circle)
 
-            # Plot member points on this circle
-            for member, (x, y) in points.items():
-                # Only plot each member once (on the first/smallest cluster it appears in)
-                if member not in plotted_members:
-                    ax.plot(x, y, 'o', markersize=10,
-                           color=cluster_colors[cluster_idx],
-                           markeredgecolor='black', markeredgewidth=1.5)
-                    ax.text(x, y, f'  {member}', fontsize=10,
-                           va='center', fontweight='bold')
-                    plotted_members.add(member)
+        # STEP 3: Plot member points
+        for member, (x, y, r) in all_points.items():
+            ax.plot(x, y, 'o', markersize=10,
+                   color='darkblue',
+                   markeredgecolor='black', markeredgewidth=1.5)
+            ax.text(x, y + 0.08, f'{member}', fontsize=10,
+                   ha='center', fontweight='bold')
 
         # Set equal aspect ratio and limits based on largest circle
         max_radius = max(c["diameter"]/2.0 for c in clusters)

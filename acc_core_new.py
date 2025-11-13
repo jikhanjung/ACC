@@ -87,6 +87,54 @@ def get_similarity(matrix, area1, area2):
         return None
 
 
+def average_pairwise_similarity(members, matrix):
+    """
+    Calculate average pairwise similarity for cluster members
+
+    Args:
+        members: set of member names
+        matrix: similarity matrix (dict of dict)
+
+    Returns:
+        float: average similarity
+    """
+    ms = list(members)
+    if len(ms) == 1:
+        return 1.0
+
+    total = 0.0
+    cnt = 0
+    for a, b in combinations(ms, 2):
+        sim = get_similarity(matrix, a, b)
+        if sim is not None:
+            total += sim
+            cnt += 1
+
+    return total / cnt if cnt > 0 else 0.0
+
+
+def format_cluster_structure(structure):
+    """
+    Format cluster structure for display
+
+    Args:
+        structure: nested list/string representing hierarchical cluster structure
+
+    Returns:
+        str: formatted structure string
+    """
+    if isinstance(structure, str):
+        return structure
+    elif isinstance(structure, list):
+        if len(structure) == 0:
+            return "[]"
+        # Format nested structure
+        parts = [format_cluster_structure(item) for item in structure]
+        return "[" + ", ".join(parts) + "]"
+    else:
+        return str(structure)
+
+
 def place_first_two_areas(area1, area2, sub_sim, inc_sim, unit=1.0):
     """
     Place the first two areas based on subordinate and inclusive similarities
@@ -131,7 +179,7 @@ def place_first_two_areas(area1, area2, sub_sim, inc_sim, unit=1.0):
     pos1 = pol2cart(radius, -angle / 2.0)
     pos2 = pol2cart(radius, angle / 2.0)
 
-    # Create cluster dict
+    # Create cluster dict with hierarchical structure
     cluster = {
         "members": {area1, area2},
         "center": center,
@@ -143,7 +191,8 @@ def place_first_two_areas(area1, area2, sub_sim, inc_sim, unit=1.0):
         "points": {
             area1: pos1,
             area2: pos2
-        }
+        },
+        "structure": [area1, area2]  # Initial pair structure
     }
 
     return cluster
@@ -341,7 +390,7 @@ def place_independent_pair(area1, area2, sub_sim, inc_sim, unit=1.0):
     return place_first_two_areas(area1, area2, sub_sim, inc_sim, unit)
 
 
-def add_area_to_cluster(cluster, new_area, sub_matrix, inc_matrix):
+def add_area_to_cluster(cluster, new_area, sub_matrix, inc_matrix, unit=1.0):
     """
     Add a single area to an existing cluster
 
@@ -349,7 +398,8 @@ def add_area_to_cluster(cluster, new_area, sub_matrix, inc_matrix):
         cluster: existing cluster dict
         new_area: name of area to add
         sub_matrix: subordinate similarity matrix (for angle calculation)
-        inc_matrix: inclusive similarity matrix (for diameter reference)
+        inc_matrix: inclusive similarity matrix (for diameter calculation)
+        unit: unit parameter for calculation
 
     Returns:
         dict: updated cluster with new area positioned
@@ -370,17 +420,66 @@ def add_area_to_cluster(cluster, new_area, sub_matrix, inc_matrix):
         best_member = list(cluster['members'])[0]
         best_sub_sim = 0.5
 
-    # Create updated cluster
+    # Calculate linkage similarity between existing cluster and new area
+    # This follows hierarchical clustering approach:
+    # similarity(cluster, new_area) based on linkage method (average, single, complete)
+    # NOT the overall pairwise average of all members!
+
+    new_members = cluster['members'] | {new_area}
+
+    # Collect similarities between each cluster member and new area
+    sims_sub = []
+    sims_inc = []
+
+    for member in cluster['members']:
+        sub_sim = get_similarity(sub_matrix, member, new_area)
+        inc_sim = get_similarity(inc_matrix, member, new_area)
+
+        if sub_sim is not None:
+            sims_sub.append(sub_sim)
+        if inc_sim is not None:
+            sims_inc.append(inc_sim)
+
+    # Calculate cluster-to-area similarity based on average linkage
+    # This is the similarity value at which we merge the cluster with the new area
+    if sims_sub:
+        new_sub_sim = sum(sims_sub) / len(sims_sub)  # average linkage
+    else:
+        new_sub_sim = 0.5
+
+    if sims_inc:
+        new_inc_sim = sum(sims_inc) / len(sims_inc)  # average linkage
+    else:
+        new_inc_sim = 0.5
+
+    # Apply paper formulas to calculate new diameter and angle
+    # Formula: d = unit / inc_sim (farthest possible affinity)
+    if new_inc_sim > 0:
+        new_diameter = unit / new_inc_sim
+    else:
+        new_diameter = unit * 100  # Very large
+
+    # Formula: θ = 180° × (1 - sub_sim) (closest possible affinity)
+    new_angle = 180.0 * (1.0 - new_sub_sim)
+    new_radius = new_diameter / 2.0
+
+    # IMPORTANT: Preserve concentric circles structure
+    # DO NOT scale existing points - they stay on their original circles
+    # Only the new area is placed on the new (outer) circle
+    # This creates the concentric circles structure of ACC
+
+    # Create updated cluster with NEW calculated values
     new_cluster = {
-        'members': cluster['members'] | {new_area},
+        'members': new_members,
         'center': cluster['center'],
-        'radius': cluster['radius'],
-        'diameter': cluster['diameter'],
-        'angle': cluster['angle'],
-        'sub_sim': cluster['sub_sim'],
-        'inc_sim': cluster['inc_sim'],
-        'points': dict(cluster['points']),
-        'midline_angle': cluster.get('midline_angle', 0.0)
+        'radius': new_radius,  # This represents the outermost circle
+        'diameter': new_diameter,
+        'angle': new_angle,
+        'sub_sim': new_sub_sim,
+        'inc_sim': new_inc_sim,
+        'points': dict(cluster['points']),  # Keep existing points as-is (inner circles)
+        'midline_angle': cluster.get('midline_angle', 0.0),
+        'structure': [cluster.get('structure', list(cluster['members'])), new_area]  # Nest structure
     }
 
     # Calculate position for new area
@@ -388,19 +487,19 @@ def add_area_to_cluster(cluster, new_area, sub_matrix, inc_matrix):
     # Angle from best_member is based on subordinate similarity
     angle_from_member = 180.0 * (1.0 - best_sub_sim)
 
-    # Get position of best_member
-    best_pos = cluster['points'][best_member]
+    # Get position of best_member (already scaled)
+    best_pos = new_cluster['points'][best_member]
 
     # Calculate angle of best_member from center
-    member_angle = math.degrees(math.atan2(best_pos[1] - cluster['center'][1],
-                                            best_pos[0] - cluster['center'][0]))
+    member_angle = math.degrees(math.atan2(best_pos[1] - new_cluster['center'][1],
+                                            best_pos[0] - new_cluster['center'][0]))
 
     # New area's angle
-    new_angle = member_angle + angle_from_member
+    new_pos_angle = member_angle + angle_from_member
 
-    # Place new area on the circle
-    new_pos = pol2cart(cluster['radius'], new_angle)
-    new_pos = cart_add(new_pos, cluster['center'])
+    # Place new area on the circle with NEW radius
+    new_pos = pol2cart(new_radius, new_pos_angle)
+    new_pos = cart_add(new_pos, new_cluster['center'])
 
     new_cluster['points'][new_area] = new_pos
 
@@ -444,14 +543,49 @@ def merge_two_clusters(c1, c2, sub_matrix, inc_matrix, unit=1.0):
 
     m1, m2 = best_pair
 
-    # Calculate merged cluster properties
-    # Diameter is based on INCLUSIVE similarity (farthest possible affinity)
-    # Use the larger diameter to accommodate both clusters
-    new_diameter = max(c1['diameter'], c2['diameter']) * 1.5  # Scale up for combined size
-    new_radius = new_diameter / 2.0
+    # Calculate linkage similarity between two clusters
+    # This follows hierarchical clustering approach:
+    # similarity(cluster1, cluster2) based on linkage method (average, single, complete)
+    # NOT the overall pairwise average of all members!
 
-    # Use smaller angle (tighter cluster)
-    new_angle = min(c1['angle'], c2['angle'])
+    # Collect similarities between all pairs from the two clusters
+    sims_sub = []
+    sims_inc = []
+
+    for member1 in c1['members']:
+        for member2 in c2['members']:
+            sub_sim = get_similarity(sub_matrix, member1, member2)
+            inc_sim = get_similarity(inc_matrix, member1, member2)
+
+            if sub_sim is not None:
+                sims_sub.append(sub_sim)
+            if inc_sim is not None:
+                sims_inc.append(inc_sim)
+
+    # Calculate cluster-to-cluster similarity based on average linkage
+    # This is the similarity value at which we merge the two clusters
+    if sims_sub:
+        merged_sub_sim = sum(sims_sub) / len(sims_sub)  # average linkage
+    else:
+        merged_sub_sim = 0.5
+
+    if sims_inc:
+        merged_inc_sim = sum(sims_inc) / len(sims_inc)  # average linkage
+    else:
+        merged_inc_sim = 0.5
+
+    merged_members = c1['members'] | c2['members']
+
+    # Apply paper formulas to calculate new diameter and angle
+    # Formula: d = unit / inc_sim (farthest possible affinity)
+    if merged_inc_sim > 0:
+        new_diameter = unit / merged_inc_sim
+    else:
+        new_diameter = unit * 100  # Very large
+
+    # Formula: θ = 180° × (1 - sub_sim) (closest possible affinity)
+    new_angle = 180.0 * (1.0 - merged_sub_sim)
+    new_radius = new_diameter / 2.0
 
     # Calculate angle between the two alignment members based on SUBORDINATE similarity
     # (closest possible affinity)
@@ -459,60 +593,57 @@ def merge_two_clusters(c1, c2, sub_matrix, inc_matrix, unit=1.0):
 
     # Create merged cluster centered at origin
     merged = {
-        'members': c1['members'] | c2['members'],
+        'members': merged_members,
         'center': (0.0, 0.0),
-        'radius': new_radius,
+        'radius': new_radius,  # This is the outermost radius (for reference)
         'diameter': new_diameter,
         'angle': new_angle,
-        'sub_sim': best_sub_sim,  # Subordinate similarity (closest affinity)
-        'inc_sim': best_inc_sim,  # Inclusive similarity (farthest affinity)
+        'sub_sim': merged_sub_sim,  # Subordinate pairwise average (closest affinity)
+        'inc_sim': merged_inc_sim,  # Inclusive pairwise average (farthest affinity)
         'points': {},
-        'midline_angle': 0.0
+        'midline_angle': 0.0,
+        'structure': [c1.get('structure', list(c1['members'])),
+                      c2.get('structure', list(c2['members']))]  # Merge structures
     }
 
-    # First place the alignment members m1 and m2
-    merged['points'][m1] = pol2cart(new_radius, -alignment_angle / 2.0)
-    merged['points'][m2] = pol2cart(new_radius, alignment_angle / 2.0)
+    # CRITICAL: Preserve concentric circles structure
+    # Each point keeps its original radius from origin
+    # We only ROTATE the clusters to align m1 and m2
 
-    # Calculate scaling factor
-    scale1 = new_radius / c1['radius'] if c1['radius'] > 0 else 1.0
-    scale2 = new_radius / c2['radius'] if c2['radius'] > 0 else 1.0
+    # Calculate current angles of m1 and m2
+    m1_pos = c1['points'][m1]
+    m1_current_angle = math.degrees(math.atan2(m1_pos[1], m1_pos[0]))
 
-    # Place remaining c1 members relative to m1
-    m1_pos_old = c1['points'][m1]
-    m1_new = merged['points'][m1]
+    m2_pos = c2['points'][m2]
+    m2_current_angle = math.degrees(math.atan2(m2_pos[1], m2_pos[0]))
 
+    # Target angles: m1 at -alignment_angle/2, m2 at +alignment_angle/2
+    m1_target_angle = -alignment_angle / 2.0
+    m2_target_angle = alignment_angle / 2.0
+
+    # Calculate rotation needed for each cluster
+    rotation1 = m1_target_angle - m1_current_angle
+    rotation2 = m2_target_angle - m2_current_angle
+
+    # Rotate all members of c1 around origin
     for member in c1['members']:
-        if member != m1:
-            old_pos = c1['points'][member]
-            # Position relative to m1
-            rel_to_m1_x = old_pos[0] - m1_pos_old[0]
-            rel_to_m1_y = old_pos[1] - m1_pos_old[1]
+        old_pos = c1['points'][member]
+        old_angle = math.degrees(math.atan2(old_pos[1], old_pos[0]))
+        old_radius = math.sqrt(old_pos[0]**2 + old_pos[1]**2)
 
-            # Apply scaling
-            scaled_rel_x = rel_to_m1_x * scale1
-            scaled_rel_y = rel_to_m1_y * scale1
+        # Apply rotation, keep radius unchanged
+        new_angle = old_angle + rotation1
+        merged['points'][member] = pol2cart(old_radius, new_angle)
 
-            # Add to m1's new position
-            merged['points'][member] = (m1_new[0] + scaled_rel_x, m1_new[1] + scaled_rel_y)
-
-    # Place remaining c2 members relative to m2
-    m2_pos_old = c2['points'][m2]
-    m2_new = merged['points'][m2]
-
+    # Rotate all members of c2 around origin
     for member in c2['members']:
-        if member != m2:
-            old_pos = c2['points'][member]
-            # Position relative to m2
-            rel_to_m2_x = old_pos[0] - m2_pos_old[0]
-            rel_to_m2_y = old_pos[1] - m2_pos_old[1]
+        old_pos = c2['points'][member]
+        old_angle = math.degrees(math.atan2(old_pos[1], old_pos[0]))
+        old_radius = math.sqrt(old_pos[0]**2 + old_pos[1]**2)
 
-            # Apply scaling
-            scaled_rel_x = rel_to_m2_x * scale2
-            scaled_rel_y = rel_to_m2_y * scale2
-
-            # Add to m2's new position
-            merged['points'][member] = (m2_new[0] + scaled_rel_x, m2_new[1] + scaled_rel_y)
+        # Apply rotation, keep radius unchanged
+        new_angle = old_angle + rotation2
+        merged['points'][member] = pol2cart(old_radius, new_angle)
 
     return merged
 
@@ -707,8 +838,9 @@ def build_acc_iterative(sub_matrix, inc_matrix, unit=1.0, method='average'):
             _, cluster, area, sub_sim, inc_sim = result
             logger.info(f"Adding area to existing cluster:")
             logger.info(f"  Area: {area}")
-            logger.info(f"  Target cluster members: {sorted(cluster['members'])}")
-            logger.info(f"  Similarity: {sub_sim:.3f}")
+            target_structure = format_cluster_structure(cluster.get('structure', sorted(cluster['members'])))
+            logger.info(f"  Target cluster: {target_structure}")
+            logger.info(f"  Best member similarity: {sub_sim:.3f}")
 
             # Add single area to existing cluster
             # Find which cluster in active_clusters matches
@@ -720,18 +852,29 @@ def build_acc_iterative(sub_matrix, inc_matrix, unit=1.0, method='average'):
 
             if cluster_idx is not None:
                 # Update the cluster
-                updated_cluster = add_area_to_cluster(cluster, area, current_sub, current_inc)
-                logger.info(f"  New position: ({updated_cluster['points'][area][0]:.3f}, {updated_cluster['points'][area][1]:.3f})")
+                updated_cluster = add_area_to_cluster(cluster, area, current_sub, current_inc, unit)
+
+                # Log new cluster calculations
+                logger.info(f"  ")
+                cluster_structure = format_cluster_structure(updated_cluster.get('structure', sorted(updated_cluster['members'])))
+                logger.info(f"  New cluster {cluster_structure} calculations:")
+                logger.info(f"    Subordinate linkage similarity: {updated_cluster['sub_sim']:.3f} (cluster-to-area)")
+                logger.info(f"    Inclusive linkage similarity: {updated_cluster['inc_sim']:.3f} (cluster-to-area)")
+                logger.info(f"    New diameter: {updated_cluster['diameter']:.3f} (was {cluster['diameter']:.3f})")
+                logger.info(f"    New angle: {updated_cluster['angle']:.2f}° (was {cluster['angle']:.2f}°)")
+                logger.info(f"  ")
+                logger.info(f"  New position for {area}: ({updated_cluster['points'][area][0]:.3f}, {updated_cluster['points'][area][1]:.3f})")
 
                 active_clusters[cluster_idx] = updated_cluster
                 placed_areas.add(area)
 
                 logger.info(f"✓ Area added. Cluster now has {len(updated_cluster['members'])} members")
 
+                cluster_str = format_cluster_structure(cluster.get('structure', sorted(cluster['members'])))
                 steps.append({
                     "step": step_num,
                     "action": "add_area",
-                    "description": f"Add {area} to cluster {sorted(cluster['members'])} (sim={sub_sim:.3f})",
+                    "description": f"Add {area} to cluster {cluster_str} (sim={sub_sim:.3f})",
                     "clusters": [dict(c) for c in active_clusters],
                     "highlighted_members": {area},
                     "placed_areas": set(placed_areas)
@@ -742,9 +885,11 @@ def build_acc_iterative(sub_matrix, inc_matrix, unit=1.0, method='average'):
 
         elif action_type == 'merge_clusters':
             _, c1, c2, sub_sim, inc_sim = result
+            c1_structure = format_cluster_structure(c1.get('structure', sorted(c1['members'])))
+            c2_structure = format_cluster_structure(c2.get('structure', sorted(c2['members'])))
             logger.info(f"Merging two clusters:")
-            logger.info(f"  Cluster 1 members: {sorted(c1['members'])}")
-            logger.info(f"  Cluster 2 members: {sorted(c2['members'])}")
+            logger.info(f"  Cluster 1: {c1_structure}")
+            logger.info(f"  Cluster 2: {c2_structure}")
             logger.info(f"  Max similarity between clusters: {sub_sim:.3f}")
 
             # Merge two clusters
@@ -759,11 +904,17 @@ def build_acc_iterative(sub_matrix, inc_matrix, unit=1.0, method='average'):
 
             if idx1 is not None and idx2 is not None:
                 # Merge the clusters
-                merged_cluster = merge_two_clusters(c1, c2, current_sub, current_inc, unit=1.0)
-                logger.info(f"  New merged cluster:")
-                logger.info(f"    Total members: {len(merged_cluster['members'])}")
-                logger.info(f"    New radius: {merged_cluster['radius']:.3f}")
+                merged_cluster = merge_two_clusters(c1, c2, current_sub, current_inc, unit)
+
+                # Log merged cluster calculations
+                logger.info(f"  ")
+                cluster_structure = format_cluster_structure(merged_cluster.get('structure', sorted(merged_cluster['members'])))
+                logger.info(f"  Merged cluster {cluster_structure} calculations:")
+                logger.info(f"    Subordinate linkage similarity: {merged_cluster['sub_sim']:.3f} (cluster-to-cluster)")
+                logger.info(f"    Inclusive linkage similarity: {merged_cluster['inc_sim']:.3f} (cluster-to-cluster)")
                 logger.info(f"    New diameter: {merged_cluster['diameter']:.3f}")
+                logger.info(f"    New angle: {merged_cluster['angle']:.2f}°")
+                logger.info(f"    Total members: {len(merged_cluster['members'])}")
 
                 # Remove both clusters and add merged one
                 # Remove higher index first to avoid index shifting issues
@@ -781,7 +932,7 @@ def build_acc_iterative(sub_matrix, inc_matrix, unit=1.0, method='average'):
                 steps.append({
                     "step": step_num,
                     "action": "merge_clusters",
-                    "description": f"Merge clusters {sorted(c1['members'])} and {sorted(c2['members'])} (sim={sub_sim:.3f})",
+                    "description": f"Merge clusters {c1_structure} and {c2_structure} (sim={sub_sim:.3f})",
                     "clusters": [dict(c) for c in active_clusters],
                     "highlighted_members": set(),
                     "placed_areas": set(placed_areas)
@@ -845,7 +996,8 @@ if __name__ == "__main__":
         cluster = step['cluster']
 
         print(f"\nCluster properties:")
-        print(f"  Members: {sorted(cluster['members'])}")
+        cluster_structure = format_cluster_structure(cluster.get('structure', sorted(cluster['members'])))
+        print(f"  Structure: {cluster_structure}")
         print(f"  Radius: {cluster['radius']:.3f}")
         print(f"  Diameter: {cluster['diameter']:.3f}")
         print(f"  Angle: {cluster['angle']:.2f}°")
@@ -933,8 +1085,8 @@ if __name__ == "__main__":
 
         print(f"\nCluster details:")
         for idx, cluster in enumerate(step_info['clusters']):
-            print(f"  Cluster {idx + 1}:")
-            print(f"    Members: {sorted(cluster['members'])}")
+            cluster_structure = format_cluster_structure(cluster.get('structure', sorted(cluster['members'])))
+            print(f"  Cluster {idx + 1}: {cluster_structure}")
             print(f"    Radius: {cluster['radius']:.3f}")
             print(f"    Diameter: {cluster['diameter']:.3f}")
             print(f"    Angle: {cluster['angle']:.2f}°")
