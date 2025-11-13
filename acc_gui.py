@@ -15,7 +15,7 @@ from PyQt5.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QTableWidget, QTableWidgetItem, QPushButton, QFileDialog,
     QLabel, QSlider, QMessageBox, QScrollArea, QCheckBox, QSplitter,
-    QDialog, QListWidget, QInputDialog, QDialogButtonBox, QTextEdit
+    QDialog, QListWidget, QInputDialog, QDialogButtonBox, QTextEdit, QLineEdit
 )
 from PyQt5.QtCore import Qt, QTimer
 
@@ -33,8 +33,10 @@ from scipy.cluster.hierarchy import dendrogram, linkage
 from scipy.spatial.distance import squareform
 from acc_utils import validate_similarity_matrix, dict_matrix_from_dataframe, build_acc_from_matrices, build_acc_from_matrices_steps, build_acc_from_matrices_iterative
 from clustering_steps import ClusteringStepManager
+from acc_core_acc2 import build_acc2, pol2cart, calculate_merge_points, generate_connection_lines
 import logging
 from io import StringIO
+import matplotlib.patches as mpl_patches
 class AreaListEditorDialog(QDialog):
     """Dialog for editing the list of areas (row/column labels)"""
 
@@ -64,7 +66,32 @@ class AreaListEditorDialog(QDialog):
         layout.addWidget(info)
 
         # Main content area
-        content_layout = QHBoxLayout()
+        content_layout = QVBoxLayout()
+
+        # Area name input section
+        input_section = QHBoxLayout()
+        input_label = QLabel("<b>Area Name:</b>")
+        input_section.addWidget(input_label)
+
+        self.area_name_input = QLineEdit()
+        self.area_name_input.setPlaceholderText("Enter area name...")
+        self.area_name_input.setStyleSheet("""
+            QLineEdit {
+                padding: 6px;
+                border: 2px solid #ddd;
+                border-radius: 4px;
+                font-size: 11px;
+            }
+            QLineEdit:focus {
+                border-color: #2196F3;
+            }
+        """)
+        input_section.addWidget(self.area_name_input, stretch=3)
+
+        content_layout.addLayout(input_section)
+
+        # Horizontal layout for list and buttons
+        list_and_buttons = QHBoxLayout()
 
         # List widget
         list_container = QVBoxLayout()
@@ -74,9 +101,10 @@ class AreaListEditorDialog(QDialog):
         self.area_list = QListWidget()
         self.area_list.addItems(self.current_labels)
         self.area_list.setSelectionMode(QListWidget.SelectionMode.SingleSelection)
+        self.area_list.itemClicked.connect(self.on_area_selected)
         list_container.addWidget(self.area_list)
 
-        content_layout.addLayout(list_container, stretch=3)
+        list_and_buttons.addLayout(list_container, stretch=3)
 
         # Buttons
         button_container = QVBoxLayout()
@@ -98,8 +126,8 @@ class AreaListEditorDialog(QDialog):
         self.add_btn.clicked.connect(self.add_area)
         button_container.addWidget(self.add_btn)
 
-        self.edit_btn = QPushButton("✏️ Edit")
-        self.edit_btn.setStyleSheet("""
+        self.update_btn = QPushButton("💾 Update")
+        self.update_btn.setStyleSheet("""
             QPushButton {
                 background-color: #2196F3;
                 color: white;
@@ -110,9 +138,14 @@ class AreaListEditorDialog(QDialog):
             QPushButton:hover {
                 background-color: #1976D2;
             }
+            QPushButton:disabled {
+                background-color: #ccc;
+                color: #666;
+            }
         """)
-        self.edit_btn.clicked.connect(self.edit_area)
-        button_container.addWidget(self.edit_btn)
+        self.update_btn.clicked.connect(self.update_area)
+        self.update_btn.setEnabled(False)
+        button_container.addWidget(self.update_btn)
 
         self.delete_btn = QPushButton("🗑️ Delete")
         self.delete_btn.setStyleSheet("""
@@ -126,12 +159,19 @@ class AreaListEditorDialog(QDialog):
             QPushButton:hover {
                 background-color: #da190b;
             }
+            QPushButton:disabled {
+                background-color: #ccc;
+                color: #666;
+            }
         """)
         self.delete_btn.clicked.connect(self.delete_area)
+        self.delete_btn.setEnabled(False)
         button_container.addWidget(self.delete_btn)
 
         button_container.addStretch()
-        content_layout.addLayout(button_container, stretch=1)
+        list_and_buttons.addLayout(button_container, stretch=1)
+
+        content_layout.addLayout(list_and_buttons)
 
         layout.addLayout(content_layout)
 
@@ -145,92 +185,98 @@ class AreaListEditorDialog(QDialog):
 
         self.setLayout(layout)
 
+    def on_area_selected(self, item):
+        """Handle area selection from list"""
+        # Show selected area name in input field
+        self.area_name_input.setText(item.text())
+        # Enable Update and Delete buttons
+        self.update_btn.setEnabled(True)
+        self.delete_btn.setEnabled(True)
+
     def add_area(self):
-        """Add a new area"""
-        text, ok = QInputDialog.getText(
-            self,
-            "Add Area",
-            "Enter new area name:",
-        )
+        """Add a new area from LineEdit"""
+        text = self.area_name_input.text().strip()
 
-        if ok and text:
-            # Validate
-            text = text.strip()
-            if not text:
-                QMessageBox.warning(self, "Invalid Name", "Area name cannot be empty or whitespace.")
-                return
+        # Validate
+        if not text:
+            QMessageBox.warning(self, "Invalid Name", "Area name cannot be empty or whitespace.")
+            return
 
-            if text in self.current_labels:
-                QMessageBox.warning(self, "Duplicate Name", f"Area '{text}' already exists.")
-                return
+        if text in self.current_labels:
+            QMessageBox.warning(self, "Duplicate Name", f"Area '{text}' already exists.")
+            return
 
-            # Add to list
-            self.current_labels.append(text)
-            self.area_list.addItem(text)
+        # Add to list
+        self.current_labels.append(text)
+        self.area_list.addItem(text)
 
-            n = len(self.current_labels)
+        n = len(self.current_labels)
 
-            if n == 1:
-                # First area - create new 1x1 matrices
-                self.sub_matrix_df = pd.DataFrame([[1.0]], index=[text], columns=[text])
-                self.inc_matrix_df = pd.DataFrame([[1.0]], index=[text], columns=[text])
-            else:
-                # Add to existing dataframes (new row and column with default value 0.5, diagonal 1.0)
-                # Create new row/column data
-                new_row_sub = pd.Series([0.5] * n, index=self.current_labels)
-                new_row_sub[text] = 1.0  # Diagonal
+        if n == 1:
+            # First area - create new 1x1 matrices
+            self.sub_matrix_df = pd.DataFrame([[1.0]], index=[text], columns=[text])
+            self.inc_matrix_df = pd.DataFrame([[1.0]], index=[text], columns=[text])
+        else:
+            # Add to existing dataframes (new row and column with default value 0.5, diagonal 1.0)
+            # Create new row/column data
+            new_row_sub = pd.Series([0.5] * n, index=self.current_labels)
+            new_row_sub[text] = 1.0  # Diagonal
 
-                new_row_inc = pd.Series([0.5] * n, index=self.current_labels)
-                new_row_inc[text] = 1.0  # Diagonal
+            new_row_inc = pd.Series([0.5] * n, index=self.current_labels)
+            new_row_inc[text] = 1.0  # Diagonal
 
-                # Add to subordinate matrix
-                self.sub_matrix_df = pd.concat([self.sub_matrix_df, pd.DataFrame([new_row_sub], index=[text])])
-                self.sub_matrix_df[text] = new_row_sub
+            # Add to subordinate matrix
+            self.sub_matrix_df = pd.concat([self.sub_matrix_df, pd.DataFrame([new_row_sub], index=[text])])
+            self.sub_matrix_df[text] = new_row_sub
 
-                # Add to inclusive matrix
-                self.inc_matrix_df = pd.concat([self.inc_matrix_df, pd.DataFrame([new_row_inc], index=[text])])
-                self.inc_matrix_df[text] = new_row_inc
+            # Add to inclusive matrix
+            self.inc_matrix_df = pd.concat([self.inc_matrix_df, pd.DataFrame([new_row_inc], index=[text])])
+            self.inc_matrix_df[text] = new_row_inc
 
-            self.modified = True
+        self.modified = True
+        # Clear input field
+        self.area_name_input.clear()
 
-    def edit_area(self):
-        """Edit selected area name"""
+    def update_area(self):
+        """Update selected area name from LineEdit"""
         selected_items = self.area_list.selectedItems()
         if not selected_items:
-            QMessageBox.information(self, "No Selection", "Please select an area to edit.")
+            QMessageBox.information(self, "No Selection", "Please select an area to update.")
             return
 
         current_item = selected_items[0]
         old_name = current_item.text()
         old_index = self.current_labels.index(old_name)
 
-        text, ok = QInputDialog.getText(
-            self,
-            "Edit Area",
-            "Enter new area name:",
-            text=old_name
-        )
+        text = self.area_name_input.text().strip()
 
-        if ok and text:
-            # Validate
-            text = text.strip()
-            if not text:
-                QMessageBox.warning(self, "Invalid Name", "Area name cannot be empty or whitespace.")
-                return
+        # Validate
+        if not text:
+            QMessageBox.warning(self, "Invalid Name", "Area name cannot be empty or whitespace.")
+            return
 
-            if text != old_name and text in self.current_labels:
-                QMessageBox.warning(self, "Duplicate Name", f"Area '{text}' already exists.")
-                return
+        if text != old_name and text in self.current_labels:
+            QMessageBox.warning(self, "Duplicate Name", f"Area '{text}' already exists.")
+            return
 
-            # Update list
-            self.current_labels[old_index] = text
-            current_item.setText(text)
+        # If name unchanged, do nothing
+        if text == old_name:
+            return
 
-            # Update dataframes - rename both index and column
-            self.sub_matrix_df.rename(index={old_name: text}, columns={old_name: text}, inplace=True)
-            self.inc_matrix_df.rename(index={old_name: text}, columns={old_name: text}, inplace=True)
+        # Update list
+        self.current_labels[old_index] = text
+        current_item.setText(text)
 
-            self.modified = True
+        # Update dataframes - rename both index and column
+        self.sub_matrix_df.rename(index={old_name: text}, columns={old_name: text}, inplace=True)
+        self.inc_matrix_df.rename(index={old_name: text}, columns={old_name: text}, inplace=True)
+
+        self.modified = True
+        # Clear selection and input
+        self.area_list.clearSelection()
+        self.area_name_input.clear()
+        self.update_btn.setEnabled(False)
+        self.delete_btn.setEnabled(False)
 
     def delete_area(self):
         """Delete selected area"""
@@ -262,6 +308,10 @@ class AreaListEditorDialog(QDialog):
             self.inc_matrix_df.drop(index=area_name, columns=area_name, inplace=True)
 
             self.modified = True
+            # Clear selection and input
+            self.area_name_input.clear()
+            self.update_btn.setEnabled(False)
+            self.delete_btn.setEnabled(False)
 
     def get_result(self):
         """Get the modified data"""
@@ -397,6 +447,7 @@ class StepMatrixWidget(QWidget):
     def __init__(self, title="Matrix", parent=None, show_header=True):
         super().__init__(parent)
         self.title = title
+        self.matrix_type = title  # Store as matrix_type for consistency (e.g., "Subordinate", "Inclusive")
         self.show_header = show_header
         self.matrix_data = None
         self.step_manager = None
@@ -483,6 +534,13 @@ class StepMatrixWidget(QWidget):
         # Navigation buttons
         btn_layout = QHBoxLayout()
         btn_layout.setSpacing(2)
+
+        self.first_btn = QPushButton("⏮")
+        self.first_btn.setMaximumWidth(40)
+        self.first_btn.clicked.connect(self.first_step)
+        self.first_btn.setEnabled(False)
+        btn_layout.addWidget(self.first_btn)
+
         self.prev_btn = QPushButton("◀")
         self.prev_btn.setMaximumWidth(40)
         self.prev_btn.clicked.connect(self.prev_step)
@@ -494,6 +552,12 @@ class StepMatrixWidget(QWidget):
         self.next_btn.clicked.connect(self.next_step)
         self.next_btn.setEnabled(False)
         btn_layout.addWidget(self.next_btn)
+
+        self.last_btn = QPushButton("⏭")
+        self.last_btn.setMaximumWidth(40)
+        self.last_btn.clicked.connect(self.last_step)
+        self.last_btn.setEnabled(False)
+        btn_layout.addWidget(self.last_btn)
 
         slider_layout.addLayout(btn_layout)
         step_layout.addLayout(slider_layout)
@@ -561,9 +625,9 @@ class StepMatrixWidget(QWidget):
                 self.info_label.setText(f"✓ Loaded: {df.shape[0]}×{df.shape[1]}, {num_steps} steps")
                 self.info_label.setStyleSheet("color: green; font-size: 10px;")
 
-                # Notify parent
+                # Notify parent which matrix was loaded
                 if hasattr(self.parent(), 'on_matrix_loaded'):
-                    self.parent().on_matrix_loaded()
+                    self.parent().on_matrix_loaded(self.matrix_type)
 
             except Exception as e:
                 QMessageBox.critical(
@@ -582,6 +646,15 @@ class StepMatrixWidget(QWidget):
         # Notify parent
         if hasattr(self.parent(), 'on_step_changed'):
             self.parent().on_step_changed()
+
+    def first_step(self):
+        """Go to first step (immediate, no preview)"""
+        if self.current_step > 0:
+            self.is_preview_mode = False
+            self.preview_clusters = None
+            self.highlight_merged = False
+            self.merged_cluster_idx = None
+            self.step_slider.setValue(0)
 
     def prev_step(self):
         """Go to previous step (immediate, no preview)"""
@@ -675,6 +748,17 @@ class StepMatrixWidget(QWidget):
                 self.update_step_display()
                 QTimer.singleShot(500, self._remove_highlight)
 
+    def last_step(self):
+        """Go to last step (immediate, no preview)"""
+        if self.step_manager:
+            max_step = self.step_manager.get_num_steps() - 1
+            if self.current_step < max_step:
+                self.is_preview_mode = False
+                self.preview_clusters = None
+                self.highlight_merged = False
+                self.merged_cluster_idx = None
+                self.step_slider.setValue(max_step)
+
     def _remove_highlight(self):
         """Remove yellow highlight from merged cluster"""
         self.highlight_merged = False
@@ -691,15 +775,24 @@ class StepMatrixWidget(QWidget):
             return
 
         # Update labels
-        self.step_label.setText(f"Step: {self.current_step}/{self.step_manager.get_num_steps()-1}")
-        self.step_desc_label.setText(self.step_manager.get_step_description(self.current_step))
+        max_step = self.step_manager.get_num_steps() - 1
+        self.step_label.setText(f"Step: {self.current_step}/{max_step}")
+
+        # If at last step, show original matrix
+        if self.current_step == max_step:
+            self.step_desc_label.setText("Final step - Original matrix restored")
+            # Update table with original matrix
+            self.populate_table(self.step_manager.original_similarity, self.step_manager.original_labels)
+        else:
+            self.step_desc_label.setText(self.step_manager.get_step_description(self.current_step))
+            # Update table with current step matrix
+            self.populate_table(step_info['matrix'], step_info['labels'])
 
         # Update buttons
+        self.first_btn.setEnabled(self.current_step > 0)
         self.prev_btn.setEnabled(self.current_step > 0)
-        self.next_btn.setEnabled(self.current_step < self.step_manager.get_num_steps() - 1)
-
-        # Update table
-        self.populate_table(step_info['matrix'], step_info['labels'])
+        self.next_btn.setEnabled(self.current_step < max_step)
+        self.last_btn.setEnabled(self.current_step < max_step)
 
     def populate_table(self, matrix, labels):
         """Populate table widget with matrix data"""
@@ -854,7 +947,7 @@ class StepMatrixWidget(QWidget):
 
             # Notify parent to update dendrograms
             if hasattr(self.parent(), 'on_matrix_loaded'):
-                self.parent().on_matrix_loaded()
+                self.parent().on_matrix_loaded(self.matrix_type)
 
     def update_matrix(self, new_matrix_df):
         """Update matrix with new data and labels"""
@@ -1116,6 +1209,13 @@ class ACCVisualizationWidget(QWidget):
         # Navigation buttons
         btn_layout = QHBoxLayout()
         btn_layout.setSpacing(2)
+
+        self.first_btn = QPushButton("⏮")
+        self.first_btn.setMaximumWidth(40)
+        self.first_btn.clicked.connect(self.first_step)
+        self.first_btn.setEnabled(False)
+        btn_layout.addWidget(self.first_btn)
+
         self.prev_btn = QPushButton("◀")
         self.prev_btn.setMaximumWidth(40)
         self.prev_btn.clicked.connect(self.prev_step)
@@ -1127,6 +1227,12 @@ class ACCVisualizationWidget(QWidget):
         self.next_btn.clicked.connect(self.next_step)
         self.next_btn.setEnabled(False)
         btn_layout.addWidget(self.next_btn)
+
+        self.last_btn = QPushButton("⏭")
+        self.last_btn.setMaximumWidth(40)
+        self.last_btn.clicked.connect(self.last_step)
+        self.last_btn.setEnabled(False)
+        btn_layout.addWidget(self.last_btn)
 
         slider_layout.addLayout(btn_layout)
         step_layout.addLayout(slider_layout)
@@ -1153,6 +1259,11 @@ class ACCVisualizationWidget(QWidget):
         self.current_step = value
         self.update_step_display()
 
+    def first_step(self):
+        """Go to first step"""
+        if self.current_step > 0:
+            self.step_slider.setValue(0)
+
     def prev_step(self):
         """Go to previous step"""
         if self.current_step > 0:
@@ -1162,6 +1273,11 @@ class ACCVisualizationWidget(QWidget):
         """Go to next step"""
         if self.current_step < len(self.acc_steps) - 1:
             self.step_slider.setValue(self.current_step + 1)
+
+    def last_step(self):
+        """Go to last step"""
+        if self.acc_steps and self.current_step < len(self.acc_steps) - 1:
+            self.step_slider.setValue(len(self.acc_steps) - 1)
 
     def update_step_display(self):
         """Update display for current step"""
@@ -1176,8 +1292,10 @@ class ACCVisualizationWidget(QWidget):
         self.step_desc_label.setText(step_info["description"])
 
         # Update buttons
+        self.first_btn.setEnabled(self.current_step > 0)
         self.prev_btn.setEnabled(self.current_step > 0)
         self.next_btn.setEnabled(self.current_step < total_steps)
+        self.last_btn.setEnabled(self.current_step < total_steps)
 
         # Plot current step
         self.plot_acc_step(step_info)
@@ -1414,6 +1532,319 @@ class ACCVisualizationWidget(QWidget):
         self.info_label.setText(f"✓ Generated: {len(clusters)} clusters, {len(all_members)} members")
         self.info_label.setStyleSheet("color: green; font-size: 10px;")
 
+    def get_all_descendants(self, cluster_id, levels, positions):
+        """Get all area descendants of a cluster"""
+        # If it's an area (not a cluster), return itself
+        if cluster_id in positions:
+            return [cluster_id]
+
+        # Find the level that created this cluster
+        for level in levels:
+            level_cluster_id = f"[{level['cluster1']}, {level['cluster2']}]"
+            if level_cluster_id == cluster_id:
+                # Recursively get descendants from both children
+                child1_descendants = self.get_all_descendants(level['cluster1'], levels, positions)
+                child2_descendants = self.get_all_descendants(level['cluster2'], levels, positions)
+                return child1_descendants + child2_descendants
+
+        return []
+
+    def apply_acc2_swaps(self, acc2_data, swaps):
+        """Apply swaps to ACC2 data and return modified copy"""
+        import copy
+        data = copy.deepcopy(acc2_data)
+
+        positions = data['positions']
+        merge_points = data['merge_points']
+        levels = data['levels']
+
+        # Apply each swap
+        for level_idx, should_swap in swaps.items():
+            if not should_swap or level_idx >= len(levels):
+                continue
+
+            level = levels[level_idx]
+            cluster_id = f"[{level['cluster1']}, {level['cluster2']}]"
+
+            if cluster_id not in merge_points:
+                continue
+
+            merge_angle = merge_points[cluster_id]['angle']
+
+            # Get all descendants of both children
+            child1_areas = self.get_all_descendants(level['cluster1'], levels, positions)
+            child2_areas = self.get_all_descendants(level['cluster2'], levels, positions)
+
+            # Mirror all descendant angles around merge_angle
+            for area in child1_areas + child2_areas:
+                if area in positions:
+                    old_angle = positions[area]['angle']
+                    new_angle = 2 * merge_angle - old_angle
+                    positions[area]['angle'] = new_angle
+
+        # Recalculate merge points and lines with new positions
+        data['merge_points'] = calculate_merge_points(levels, positions)
+        data['lines'] = generate_connection_lines(levels, positions, data['merge_points'])
+
+        return data
+
+    def plot_acc2(self, acc2_data, reset_swaps=True):
+        """Plot ACC2 visualization with dendrogram on concentric circles"""
+        # Store ACC2 data for interactive manipulation
+        self.acc2_data = acc2_data
+
+        # Initialize or keep swap state
+        if reset_swaps or not hasattr(self, 'acc2_swaps'):
+            self.acc2_swaps = {}  # {level_idx: True/False}
+
+        # Apply swaps to create modified data
+        working_data = self.apply_acc2_swaps(acc2_data, self.acc2_swaps)
+
+        self.figure.clear()
+        ax = self.figure.add_subplot(111)
+        ax.set_aspect('equal')
+        ax.grid(True, alpha=0.3)
+        ax.axhline(y=0, color='k', linewidth=0.5, alpha=0.3)
+        ax.axvline(x=0, color='k', linewidth=0.5, alpha=0.3)
+
+        circles = working_data['circles']
+        positions = working_data['positions']
+        merge_points = working_data['merge_points']
+        lines = working_data['lines']
+        levels = working_data['levels']
+
+        # Create radius -> inc_sim mapping
+        radius_to_sim = {}
+        for level in levels:
+            radius_to_sim[level['radius']] = level['inc_sim']
+
+        # Step 1: Draw all concentric circles
+        circle_colors = plt.cm.rainbow(np.linspace(0, 1, len(circles)))
+
+        for idx, radius in enumerate(circles):
+            # Label with inclusive similarity instead of radius
+            if radius == 0.5:
+                label = "Areas"
+            else:
+                inc_sim = radius_to_sim.get(radius, 0.0)
+                label = f"inc_sim={inc_sim:.3f}"
+
+            circle = plt.Circle((0, 0), radius, fill=False,
+                               edgecolor=circle_colors[idx],
+                               linewidth=2,
+                               linestyle='-',
+                               alpha=0.7,
+                               label=label)
+            ax.add_patch(circle)
+
+        # Step 2: Draw connection lines
+        # First draw arcs, then radial lines (so radial lines are on top)
+
+        # Draw arcs
+        for line in lines:
+            if line['type'] == 'arc':
+                radius = line['radius']
+                angle_start = line['angle_start']
+                angle_end = line['angle_end']
+
+                # Convert to matplotlib's convention
+                mpl_angle_start = angle_start + 90
+                mpl_angle_end = angle_end + 90
+
+                if mpl_angle_start > mpl_angle_end:
+                    mpl_angle_start, mpl_angle_end = mpl_angle_end, mpl_angle_start
+
+                arc = mpl_patches.Arc((0, 0), 2*radius, 2*radius,
+                                angle=0,
+                                theta1=mpl_angle_start,
+                                theta2=mpl_angle_end,
+                                color='black',
+                                linewidth=2,
+                                alpha=0.8)
+                ax.add_patch(arc)
+
+        # Draw radial lines
+        for line in lines:
+            if line['type'] == 'radial':
+                r1, angle = line['from']
+                r2, _ = line['to']
+
+                # Convert to cartesian
+                x1, y1 = pol2cart(r1, angle)
+                x2, y2 = pol2cart(r2, angle)
+
+                ax.plot([x1, x2], [y1, y2], 'k-', linewidth=2, alpha=0.8)
+
+        # Step 3: Draw areas at r=0.5
+        for area, pos in positions.items():
+            angle = pos['angle']
+            radius = pos['radius']
+
+            # Convert to cartesian
+            x, y = pol2cart(radius, angle)
+
+            # Draw area point
+            ax.scatter(x, y, c='darkblue', s=200, zorder=10,
+                      edgecolors='black', linewidth=2)
+
+            # Label area
+            label_r = radius - 0.1
+            label_x, label_y = pol2cart(label_r, angle)
+            ax.text(label_x, label_y, area, fontsize=14, ha='center', va='center',
+                   fontweight='bold', color='darkblue')
+
+        # Step 4: Draw merge points (small red dots) and store their info
+        merge_point_data = []  # Store (x, y, angle, sub_sim, cluster_id)
+
+        # Create mapping from cluster_id to subordinate similarity
+        cluster_to_subsim = {}
+        for level in levels:
+            cluster_id = f"[{level['cluster1']}, {level['cluster2']}]"
+            cluster_to_subsim[cluster_id] = level['sub_sim']
+
+        for cluster_id, mp in merge_points.items():
+            angle = mp['angle']
+            radius = mp['radius']
+
+            # Convert to cartesian
+            x, y = pol2cart(radius, angle)
+
+            # Draw merge point
+            ax.scatter(x, y, c='red', s=50, zorder=9,
+                      edgecolors='black', linewidth=1, alpha=0.6)
+
+            # Store merge point data for hover
+            sub_sim = cluster_to_subsim.get(cluster_id, 0.0)
+            merge_point_data.append((x, y, angle, sub_sim, cluster_id))
+
+        # Set plot limits
+        max_radius = max(circles)
+        lim = max_radius * 1.2
+        ax.set_xlim(-lim, lim)
+        ax.set_ylim(-lim, lim)
+
+        # Add title
+        ax.set_title('ACC2: Dendrogram on Concentric Circles', fontsize=12, fontweight='bold')
+
+        # Add info text
+        info_lines = [
+            f"Total areas: {len(positions)}",
+            f"Merge levels: {len(levels)}",
+            f"Circles: {len(circles)}",
+            f"All areas at r={circles[0]:.1f}"
+        ]
+        info_text = '\n'.join(info_lines)
+        ax.text(0.02, 0.98, info_text,
+               transform=ax.transAxes,
+               fontsize=10,
+               verticalalignment='top',
+               bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.8))
+
+        # Add legend (limit to first few circles)
+        handles, labels = ax.get_legend_handles_labels()
+        if len(handles) > 8:
+            handles = handles[:4] + handles[-4:]
+            labels = labels[:4] + labels[-4:]
+        ax.legend(handles, labels, loc='upper right', fontsize=8, ncol=2)
+
+        # Add interactive hover annotation for merge points
+        annot = ax.annotate("", xy=(0, 0), xytext=(10, 10),
+                           textcoords="offset points",
+                           bbox=dict(boxstyle="round", fc="yellow", alpha=0.9),
+                           fontsize=9,
+                           visible=False,
+                           zorder=100)
+
+        def on_hover(event):
+            """Handle mouse hover events"""
+            if event.inaxes != ax:
+                annot.set_visible(False)
+                self.canvas.draw_idle()
+                return
+
+            # Check if mouse is near any merge point
+            if event.xdata is None or event.ydata is None:
+                return
+
+            # Find closest merge point
+            min_dist = float('inf')
+            closest_point = None
+
+            for x, y, angle, sub_sim, cluster_id in merge_point_data:
+                dist = ((event.xdata - x)**2 + (event.ydata - y)**2)**0.5
+                if dist < min_dist:
+                    min_dist = dist
+                    closest_point = (x, y, angle, sub_sim, cluster_id)
+
+            # Show annotation if close enough (threshold based on axes limits)
+            threshold = lim * 0.05  # 5% of axis limit
+            if min_dist < threshold and closest_point:
+                x, y, angle, sub_sim, cluster_id = closest_point
+                annot.xy = (x, y)
+                text = f"{cluster_id}\nAngle: {angle:.1f}°\nSub sim: {sub_sim:.3f}"
+                annot.set_text(text)
+                annot.set_visible(True)
+            else:
+                annot.set_visible(False)
+
+            self.canvas.draw_idle()
+
+        # Connect hover event
+        self.canvas.mpl_connect('motion_notify_event', on_hover)
+
+        def on_click(event):
+            """Handle mouse click events"""
+            if event.inaxes != ax:
+                return
+
+            # Check if click is near any merge point
+            if event.xdata is None or event.ydata is None:
+                return
+
+            # Find closest merge point
+            min_dist = float('inf')
+            closest_point = None
+            closest_level_idx = None
+
+            for x, y, angle, sub_sim, cluster_id in merge_point_data:
+                dist = ((event.xdata - x)**2 + (event.ydata - y)**2)**0.5
+                if dist < min_dist:
+                    min_dist = dist
+                    closest_point = (x, y, angle, sub_sim, cluster_id)
+
+                    # Find level index for this cluster_id
+                    for idx, level in enumerate(levels):
+                        level_cluster_id = f"[{level['cluster1']}, {level['cluster2']}]"
+                        if level_cluster_id == cluster_id:
+                            closest_level_idx = idx
+                            break
+
+            # If click is close enough, toggle swap
+            threshold = lim * 0.05  # 5% of axis limit
+            if min_dist < threshold and closest_level_idx is not None:
+                # Toggle swap for this level
+                self.acc2_swaps[closest_level_idx] = not self.acc2_swaps.get(closest_level_idx, False)
+
+                # Redraw with swaps applied
+                self.plot_acc2(self.acc2_data, reset_swaps=False)
+
+                # Show feedback
+                _, _, _, _, cluster_id = closest_point
+                swap_state = "swapped" if self.acc2_swaps[closest_level_idx] else "normal"
+                self.info_label.setText(f"✓ {cluster_id} - {swap_state}")
+                self.info_label.setStyleSheet("color: blue; font-size: 10px;")
+
+        # Connect click event
+        self.canvas.mpl_connect('button_press_event', on_click)
+
+        self.figure.tight_layout()
+        self.canvas.draw()
+        self.info_label.setText(f"✓ ACC2 Generated: {len(positions)} areas, {len(circles)} circles")
+        self.info_label.setStyleSheet("color: green; font-size: 10px;")
+
+        # Hide step controls for ACC2
+        self.step_controls.setVisible(False)
+
 
 class ColumnPanel(QWidget):
     """Base class for column panels"""
@@ -1491,11 +1922,20 @@ class LeftPanel(ColumnPanel):
 
         self.content_layout.addWidget(self.inc_matrix_widget, stretch=1)
 
-    def on_matrix_loaded(self):
-        """Called when a matrix is loaded"""
+    def on_matrix_loaded(self, matrix_type):
+        """
+        Called when a matrix is loaded
+
+        Args:
+            matrix_type: 'Subordinate' or 'Inclusive'
+        """
         main_window = self.window()
         if isinstance(main_window, MainWindow):
-            main_window.update_dendrograms()
+            # Update only the dendrogram for the loaded matrix
+            if matrix_type == 'Subordinate':
+                main_window.update_dendrogram('subordinate')
+            elif matrix_type == 'Inclusive':
+                main_window.update_dendrogram('inclusive')
 
     def on_step_changed(self):
         """Called when step changes"""
@@ -1651,6 +2091,27 @@ class RightPanel(ColumnPanel):
         self.generate_btn.clicked.connect(self.on_generate_clicked)
         button_layout.addWidget(self.generate_btn, stretch=2)
 
+        # Generate ACC2 button
+        self.generate_acc2_btn = QPushButton("🎯 Generate ACC2")
+        self.generate_acc2_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #9C27B0;
+                color: white;
+                font-size: 14px;
+                font-weight: bold;
+                padding: 12px;
+                border-radius: 6px;
+            }
+            QPushButton:hover {
+                background-color: #7B1FA2;
+            }
+            QPushButton:pressed {
+                background-color: #6A1B9A;
+            }
+        """)
+        self.generate_acc2_btn.clicked.connect(self.on_generate_acc2_clicked)
+        button_layout.addWidget(self.generate_acc2_btn, stretch=2)
+
         # Show Log button
         self.show_log_btn = QPushButton("📋 Show Log")
         self.show_log_btn.setStyleSheet("""
@@ -1688,6 +2149,12 @@ class RightPanel(ColumnPanel):
         main_window = self.window()
         if isinstance(main_window, MainWindow):
             main_window.generate_acc()
+
+    def on_generate_acc2_clicked(self):
+        """Handle generate ACC2 button click"""
+        main_window = self.window()
+        if isinstance(main_window, MainWindow):
+            main_window.generate_acc2()
 
     def on_show_log_clicked(self):
         """Handle show log button click"""
@@ -1739,23 +2206,34 @@ class MainWindow(QMainWindow):
         # Set central widget
         self.setCentralWidget(splitter)
 
-    def update_dendrograms(self):
-        """Update dendrograms when matrices are loaded"""
-        # Update subordinate dendrogram
-        sub_step_mgr = self.left_panel.sub_matrix_widget.get_step_manager()
-        if sub_step_mgr:
-            self.center_panel.sub_dendro_widget.set_step_manager(sub_step_mgr)
-            self.center_panel.sub_dendro_widget.set_step(
-                self.left_panel.sub_matrix_widget.get_current_step()
-            )
+    def update_dendrogram(self, which='both'):
+        """
+        Update specific dendrogram(s)
 
-        # Update inclusive dendrogram
-        inc_step_mgr = self.left_panel.inc_matrix_widget.get_step_manager()
-        if inc_step_mgr:
-            self.center_panel.inc_dendro_widget.set_step_manager(inc_step_mgr)
-            self.center_panel.inc_dendro_widget.set_step(
-                self.left_panel.inc_matrix_widget.get_current_step()
-            )
+        Args:
+            which: 'subordinate', 'inclusive', or 'both'
+        """
+        if which in ('subordinate', 'both'):
+            # Update subordinate dendrogram
+            sub_step_mgr = self.left_panel.sub_matrix_widget.get_step_manager()
+            if sub_step_mgr:
+                self.center_panel.sub_dendro_widget.set_step_manager(sub_step_mgr)
+                self.center_panel.sub_dendro_widget.set_step(
+                    self.left_panel.sub_matrix_widget.get_current_step()
+                )
+
+        if which in ('inclusive', 'both'):
+            # Update inclusive dendrogram
+            inc_step_mgr = self.left_panel.inc_matrix_widget.get_step_manager()
+            if inc_step_mgr:
+                self.center_panel.inc_dendro_widget.set_step_manager(inc_step_mgr)
+                self.center_panel.inc_dendro_widget.set_step(
+                    self.left_panel.inc_matrix_widget.get_current_step()
+                )
+
+    def update_dendrograms(self):
+        """Update both dendrograms (for backward compatibility)"""
+        self.update_dendrogram('both')
 
     def update_dendrogram_steps(self):
         """Update dendrogram display when step changes"""
@@ -1890,6 +2368,82 @@ class MainWindow(QMainWindow):
             import traceback
             traceback.print_exc()
 
+    def generate_acc2(self):
+        """Generate ACC2 visualization with all dendrogram level circles"""
+        try:
+            # Check if both matrices are loaded
+            if not self.left_panel.sub_matrix_widget.is_loaded():
+                QMessageBox.warning(
+                    self,
+                    "Missing Data",
+                    "Please load the Subordinate Similarity Matrix first"
+                )
+                return
+
+            if not self.left_panel.inc_matrix_widget.is_loaded():
+                QMessageBox.warning(
+                    self,
+                    "Missing Data",
+                    "Please load the Inclusive Similarity Matrix first"
+                )
+                return
+
+            # Get original matrices (not step matrices)
+            sub_df = self.left_panel.sub_matrix_widget.get_dataframe()
+            inc_df = self.left_panel.inc_matrix_widget.get_dataframe()
+
+            sub_matrix = dict_matrix_from_dataframe(sub_df)
+            inc_matrix = dict_matrix_from_dataframe(inc_df)
+
+            # Validate matrices
+            valid, msg = validate_similarity_matrix(sub_matrix)
+            if not valid:
+                QMessageBox.warning(
+                    self,
+                    "Invalid Subordinate Matrix",
+                    f"Subordinate matrix validation failed:\n{msg}"
+                )
+                return
+
+            valid, msg = validate_similarity_matrix(inc_matrix)
+            if not valid:
+                QMessageBox.warning(
+                    self,
+                    "Invalid Inclusive Matrix",
+                    f"Inclusive matrix validation failed:\n{msg}"
+                )
+                return
+
+            # Build ACC2
+            acc2_data = build_acc2(sub_matrix, inc_matrix, unit=1.0)
+
+            # Visualize ACC2
+            self.right_panel.acc_widget.plot_acc2(acc2_data)
+
+            # Show success message
+            QMessageBox.information(
+                self,
+                "Success",
+                f"ACC2 Visualization generated!\n\n"
+                f"Total areas: {len(acc2_data['positions'])}\n"
+                f"Merge levels: {len(acc2_data['levels'])}\n"
+                f"Concentric circles: {len(acc2_data['circles'])}\n"
+                f"All areas at r=0.5\n\n"
+                f"Features:\n"
+                f"- Circle size: diameter = 1 + (1 - similarity)\n"
+                f"- Dendrogram mapped onto concentric circles\n"
+                f"- Explicit hierarchy lines (radial + arcs)"
+            )
+
+        except Exception as e:
+            QMessageBox.critical(
+                self,
+                "Error",
+                f"Failed to generate ACC2 visualization:\n{str(e)}"
+            )
+            import traceback
+            traceback.print_exc()
+
     def show_acc_log(self):
         """Show ACC generation log in a dialog"""
         if not self.acc_log:
@@ -1924,4 +2478,4 @@ if __name__ == "__main__":
     main()
 
 # Build command:
-# pyinstaller --name "AACCViz_v0.0.1_20251112.exe" --onefile --noconsole acc_gui.py
+# pyinstaller --name "AACCViz_v0.0.2_20251113.exe" --onefile --noconsole acc_gui.py
