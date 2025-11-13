@@ -20,8 +20,19 @@ logger = logging.getLogger('ACC_Iterative')
 # Utility functions
 # ------------------------------------------------------------
 def pol2cart(r, angle_deg):
-    rad = math.radians(angle_deg)
+    # Reference: (0,1) as 0 degrees (upward on y-axis)
+    # Add 90 degrees to rotate from standard (1,0) reference
+    rad = math.radians(angle_deg + 90)
     return (r * math.cos(rad), r * math.sin(rad))
+
+
+def cart2pol(x, y):
+    # Reference: (0,1) as 0 degrees (upward on y-axis)
+    # Subtract 90 degrees to convert from standard (1,0) reference
+    r = math.sqrt(x**2 + y**2)
+    angle_rad = math.atan2(y, x)
+    angle_deg = math.degrees(angle_rad) - 90
+    return (r, angle_deg)
 
 
 def cart_add(a, b):
@@ -491,8 +502,8 @@ def add_area_to_cluster(cluster, new_area, sub_matrix, inc_matrix, unit=1.0):
     best_pos = new_cluster['points'][best_member]
 
     # Calculate angle of best_member from center
-    member_angle = math.degrees(math.atan2(best_pos[1] - new_cluster['center'][1],
-                                            best_pos[0] - new_cluster['center'][0]))
+    center = new_cluster['center']
+    _, member_angle = cart2pol(best_pos[0] - center[0], best_pos[1] - center[1])
 
     # New area's angle
     new_pos_angle = member_angle + angle_from_member
@@ -612,10 +623,10 @@ def merge_two_clusters(c1, c2, sub_matrix, inc_matrix, unit=1.0):
 
     # Calculate current angles of m1 and m2
     m1_pos = c1['points'][m1]
-    m1_current_angle = math.degrees(math.atan2(m1_pos[1], m1_pos[0]))
+    _, m1_current_angle = cart2pol(m1_pos[0], m1_pos[1])
 
     m2_pos = c2['points'][m2]
-    m2_current_angle = math.degrees(math.atan2(m2_pos[1], m2_pos[0]))
+    _, m2_current_angle = cart2pol(m2_pos[0], m2_pos[1])
 
     # Target angles: m1 at -alignment_angle/2, m2 at +alignment_angle/2
     m1_target_angle = -alignment_angle / 2.0
@@ -628,8 +639,7 @@ def merge_two_clusters(c1, c2, sub_matrix, inc_matrix, unit=1.0):
     # Rotate all members of c1 around origin
     for member in c1['members']:
         old_pos = c1['points'][member]
-        old_angle = math.degrees(math.atan2(old_pos[1], old_pos[0]))
-        old_radius = math.sqrt(old_pos[0]**2 + old_pos[1]**2)
+        old_radius, old_angle = cart2pol(old_pos[0], old_pos[1])
 
         # Apply rotation, keep radius unchanged
         new_angle = old_angle + rotation1
@@ -638,8 +648,7 @@ def merge_two_clusters(c1, c2, sub_matrix, inc_matrix, unit=1.0):
     # Rotate all members of c2 around origin
     for member in c2['members']:
         old_pos = c2['points'][member]
-        old_angle = math.degrees(math.atan2(old_pos[1], old_pos[0]))
-        old_radius = math.sqrt(old_pos[0]**2 + old_pos[1]**2)
+        old_radius, old_angle = cart2pol(old_pos[0], old_pos[1])
 
         # Apply rotation, keep radius unchanged
         new_angle = old_angle + rotation2
