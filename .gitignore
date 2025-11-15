@@ -160,3 +160,12 @@ output/
 results/
 *.docx
 .claude/settings.local.json
+
+# Build and packaging
+InnoSetup/Output/
+*.iss
+packaging/linux/AppDir/
+build_linux/
+*.dmg
+*.AppImage
+*.zip

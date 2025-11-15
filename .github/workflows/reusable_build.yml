@@ -1,0 +1,287 @@
+name: Reusable Build Workflow
+
+on:
+  workflow_call:
+    inputs:
+      build_number:
+        required: true
+        type: string
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install Windows dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pyinstaller
+
+      - name: Get Version String
+        id: get_version
+        shell: bash
+        run: echo "VERSION=$(python -c 'from version import __version__; print(__version__)')" >> $GITHUB_OUTPUT
+
+      - name: Debug Version String
+        run: echo "Version string captured - ${{ steps.get_version.outputs.VERSION }}"
+
+      - name: Download and Install Inno Setup
+        shell: pwsh
+        run: |
+          $inno_url = "https://files.jrsoftware.org/is/6/innosetup-6.2.2.exe"
+          $inno_installer = "innosetup-installer.exe"
+          Invoke-WebRequest -Uri $inno_url -OutFile $inno_installer
+          Start-Process -FilePath $inno_installer -ArgumentList "/VERYSILENT /SUPPRESSMSGBOXES /NORESTART" -Wait
+          echo "C:\Program Files (x86)\Inno Setup 6" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+
+      - name: Build Windows Executables and Installer
+        shell: pwsh
+        run: |
+          $env:BUILD_NUMBER = "${{ inputs.build_number }}"
+          python build.py
+          # List output directories to debug
+          echo "=== Listing InnoSetup directory ==="
+          if (Test-Path "InnoSetup") {
+            Get-ChildItem -Path "InnoSetup" -Recurse | Format-Table FullName
+          }
+          echo "=== Listing dist directory ==="
+          if (Test-Path "dist") {
+            Get-ChildItem -Path "dist" -Name
+          }
+          echo "=== Checking for installer ==="
+          if (Test-Path "InnoSetup/Output") {
+            echo "InnoSetup/Output exists:"
+            Get-ChildItem -Path "InnoSetup/Output" -Name
+          } else {
+            echo "InnoSetup/Output does not exist"
+          }
+
+      - name: Zip Windows Installer or Portable Build
+        shell: pwsh
+        if: success()
+        run: |
+          # Check for installer in InnoSetup/Output/
+          $installerFound = $false
+          if (Test-Path "InnoSetup/Output/") {
+            $installerPath = Get-ChildItem -Path "InnoSetup/Output/" -Filter "*.exe" -ErrorAction SilentlyContinue | Select-Object -First 1
+            if ($installerPath) {
+              $zipFileName = "ACC-Windows-Installer-v${{ steps.get_version.outputs.VERSION }}-build${{ inputs.build_number }}.zip"
+              Compress-Archive -Path $installerPath.FullName -DestinationPath $zipFileName
+              echo "Zipped installer to $zipFileName"
+              $installerFound = $true
+            }
+          }
+
+          # If no installer, create portable zip
+          if (-not $installerFound) {
+            echo "No installer found, creating portable zip"
+            $zipFileName = "ACC-Windows-Portable-v${{ steps.get_version.outputs.VERSION }}-build${{ inputs.build_number }}.zip"
+            if (Test-Path "dist/ACC") {
+              Compress-Archive -Path "dist/ACC/*" -DestinationPath $zipFileName
+              echo "Created portable zip: $zipFileName"
+            } else {
+              echo "ERROR: dist/ACC directory not found"
+              exit 1
+            }
+          }
+
+      - name: Upload Windows artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: acc-windows
+          path: |
+            ACC-Windows-*.zip
+
+  build-macos:
+    runs-on: macos-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install macOS system dependencies
+        run: |
+          brew install qt5 create-dmg
+          echo "export PATH=/usr/local/opt/qt5/bin:$PATH" >> ~/.bash_profile
+
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pyinstaller
+
+      - name: Get Version String
+        id: get_version
+        shell: bash
+        run: echo "VERSION=$(python -c 'from version import __version__; print(__version__)')" >> $GITHUB_OUTPUT
+
+      - name: Debug Version String
+        run: echo "Version string captured - ${{ steps.get_version.outputs.VERSION }}"
+
+      - name: Build macOS application
+        run: |
+          export PATH=/usr/local/opt/qt5/bin:$PATH
+          python build.py
+        env:
+          BUILD_NUMBER: ${{ inputs.build_number }}
+
+      - name: Create macOS app bundle
+        run: |
+          if [ ! -d "dist/ACC.app" ]; then
+            echo "Creating proper macOS app bundle..."
+
+            # Create bundle structure
+            mkdir -p "dist/ACC.app/Contents/MacOS"
+            mkdir -p "dist/ACC.app/Contents/Resources"
+
+            # Copy executable
+            if [ -d "dist/ACC" ]; then
+              # PyInstaller created a directory, copy its contents
+              cp -r "dist/ACC/"* "dist/ACC.app/Contents/MacOS/"
+              chmod +x "dist/ACC.app/Contents/MacOS/ACC"
+            else
+              echo "ERROR: dist/ACC directory not found"
+              ls -la dist/
+              exit 1
+            fi
+
+            # Create Info.plist
+            cat > "dist/ACC.app/Contents/Info.plist" << EOF
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+            <key>CFBundleDevelopmentRegion</key>
+            <string>en</string>
+            <key>CFBundleExecutable</key>
+            <string>ACC</string>
+            <key>CFBundleIdentifier</key>
+            <string>com.jikhanjung.acc</string>
+            <key>CFBundleInfoDictionaryVersion</key>
+            <string>6.0</string>
+            <key>CFBundleName</key>
+            <string>ACC</string>
+            <key>CFBundleDisplayName</key>
+            <string>ACC</string>
+            <key>CFBundlePackageType</key>
+            <string>APPL</string>
+            <key>CFBundleShortVersionString</key>
+            <string>${{ steps.get_version.outputs.VERSION }}</string>
+            <key>CFBundleVersion</key>
+            <string>${{ inputs.build_number }}</string>
+            <key>LSMinimumSystemVersion</key>
+            <string>10.14</string>
+            <key>NSHighResolutionCapable</key>
+            <true/>
+            <key>NSPrincipalClass</key>
+            <string>NSApplication</string>
+          </dict>
+          </plist>
+          EOF
+
+            echo "App bundle created successfully"
+            ls -la "dist/ACC.app/Contents/"
+            ls -la "dist/ACC.app/Contents/MacOS/"
+          else
+            echo "dist/ACC.app already exists, skipping bundle creation"
+          fi
+
+      - name: Create macOS DMG
+        run: |
+          create-dmg \
+            --volname "ACC Installer" \
+            --window-pos 200 120 \
+            --window-size 800 400 \
+            --hide-extension "ACC.app" \
+            --hdiutil-verbose \
+            "ACC-macOS-Installer-v${{ steps.get_version.outputs.VERSION }}-build${{ inputs.build_number }}.dmg" \
+            "dist/ACC.app" || echo "DMG creation failed, but continuing"
+
+      - name: Upload macOS artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: acc-macos
+          path: |
+            ACC-macOS-Installer-v${{ steps.get_version.outputs.VERSION }}-build${{ inputs.build_number }}.dmg
+
+  build-linux:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install Linux system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libxcb-xinerama0 \
+            libxcb-icccm4 \
+            libxcb-image0 \
+            libxcb-keysyms1 \
+            libxcb-randr0 \
+            libxcb-render-util0 \
+            libxcb-xfixes0 \
+            libxcb-shape0 \
+            libxcb-cursor0 \
+            qt5-qmake \
+            qtbase5-dev \
+            libqt5gui5 \
+            libqt5core5a \
+            libqt5widgets5 \
+            libglut-dev \
+            libglut3.12 \
+            python3-opengl \
+            fuse
+
+      - name: Download linuxdeploy and appimagetool
+        run: |
+          curl -LO https://github.com/linuxdeploy/linuxdeploy/releases/download/continuous/linuxdeploy-x86_64.AppImage
+          curl -LO https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-x86_64.AppImage
+          chmod +x linuxdeploy-x86_64.AppImage appimagetool-x86_64.AppImage
+          sudo mv linuxdeploy-x86_64.AppImage /usr/local/bin/linuxdeploy
+          sudo mv appimagetool-x86_64.AppImage /usr/local/bin/appimagetool
+
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pyinstaller
+
+      - name: Get Version String
+        id: get_version
+        run: echo "VERSION=$(python -c 'from version import __version__; print(__version__)')" >> $GITHUB_OUTPUT
+
+      - name: Build Linux executable
+        run: |
+          python build.py
+        env:
+          BUILD_NUMBER: ${{ inputs.build_number }}
+
+      - name: Create Linux AppImage
+        run: |
+          chmod +x packaging/linux/create_appimage.sh
+          packaging/linux/create_appimage.sh v${{ steps.get_version.outputs.VERSION }}-build${{ inputs.build_number }}
+
+      - name: Upload Linux artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: acc-linux
+          path: |
+            build_linux/ACC-Linux-v${{ steps.get_version.outputs.VERSION }}-build${{ inputs.build_number }}.AppImage

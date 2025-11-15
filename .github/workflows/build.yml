@@ -1,0 +1,15 @@
+name: Manual Build
+
+on:
+  workflow_dispatch:
+    inputs:
+      build_number:
+        description: 'Build number (optional, defaults to run number)'
+        required: false
+        default: ''
+
+jobs:
+  build:
+    uses: ./.github/workflows/reusable_build.yml
+    with:
+      build_number: ${{ github.event.inputs.build_number || github.run_number }}

@@ -1,0 +1,93 @@
+name: Release
+
+permissions:
+  contents: write
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+
+jobs:
+  test:
+    uses: ./.github/workflows/test.yml
+
+  call-build-workflow:
+    needs: test
+    uses: ./.github/workflows/reusable_build.yml
+    with:
+      build_number: ${{ github.run_number }}
+
+  create-release:
+    needs: call-build-workflow
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: release-files/
+
+      - name: Generate SHA256 checksums
+        run: |
+          cd release-files
+          find . -type f \( -name "*.zip" -o -name "*.dmg" -o -name "*.AppImage" \) -exec sha256sum {} \; > ../SHA256SUMS.txt
+          cd ..
+          echo "=== Generated Checksums ==="
+          cat SHA256SUMS.txt
+
+      - name: Prepare release body
+        id: release_body
+        run: |
+          if [ -f RELEASE_NOTES.md ]; then
+            echo "Found RELEASE_NOTES.md"
+            {
+              echo 'RELEASE_BODY<<EOF'
+              cat RELEASE_NOTES.md
+              echo ""
+              echo "---"
+              echo ""
+              echo "## SHA256 Checksums"
+              echo ""
+              echo '```'
+              cat SHA256SUMS.txt
+              echo '```'
+              echo ""
+              echo "Built from commit: ${{ github.sha }}"
+              echo 'EOF'
+            } >> $GITHUB_OUTPUT
+          else
+            echo "RELEASE_NOTES.md not found, using default body"
+            {
+              echo 'RELEASE_BODY<<EOF'
+              echo "🚀 ACC ${{ github.ref_name }} Release"
+              echo ""
+              echo "Area Affinity in Concentric Circles - Hierarchical cluster visualization tool"
+              echo ""
+              echo "## SHA256 Checksums"
+              echo ""
+              echo '```'
+              cat SHA256SUMS.txt
+              echo '```'
+              echo ""
+              echo "Built from commit: ${{ github.sha }}"
+              echo 'EOF'
+            } >> $GITHUB_OUTPUT
+          fi
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: ACC ${{ github.ref_name }}
+          body: ${{ steps.release_body.outputs.RELEASE_BODY }}
+          prerelease: ${{ contains(github.ref_name, '-alpha') || contains(github.ref_name, '-beta') || contains(github.ref_name, '-rc') }}
+          files: |
+            release-files/acc-windows/*.zip
+            release-files/acc-macos/*.dmg
+            release-files/acc-linux/*.AppImage
+            SHA256SUMS.txt
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

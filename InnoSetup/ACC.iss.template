@@ -1,0 +1,36 @@
+#define AppVersion "{{VERSION}}"
+#define BuildNumber GetEnv('BUILD_NUMBER')
+
+[Setup]
+AppName=ACC
+AppVersion={#AppVersion}
+AppPublisher=jikhanjung
+AppPublisherURL=https://github.com/jikhanjung/ACC
+DefaultDirName={autopf}\ACC
+DefaultGroupName=ACC
+OutputDir={{DIST_PATH}}\..\InnoSetup\Output
+; Use conservative compression to reduce AV heuristics
+Compression=lzma/normal
+SolidCompression=no
+OutputBaseFilename=ACC_v{#AppVersion}_build{#BuildNumber}_Installer
+UninstallDisplayName=ACC - Area Affinity in Concentric Circles
+ArchitecturesAllowed=x64compatible
+ArchitecturesInstallIn64BitMode=x64compatible
+
+[Files]
+; Include main executable
+Source: "{{DIST_PATH}}\ACC\ACC.exe"; DestDir: "{app}"; Flags: ignoreversion
+
+; Include all other files and directories
+Source: "{{DIST_PATH}}\ACC\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
+
+[Icons]
+Name: "{group}\ACC"; Filename: "{app}\ACC.exe"
+Name: "{group}\Uninstall ACC"; Filename: "{uninstallexe}"
+Name: "{autodesktop}\ACC"; Filename: "{app}\ACC.exe"; Tasks: desktopicon
+
+[Tasks]
+Name: "desktopicon"; Description: "Create a &desktop icon"; GroupDescription: "Additional icons:"
+
+[Run]
+Filename: "{app}\ACC.exe"; Description: "Launch ACC"; Flags: nowait postinstall skipifsilent
