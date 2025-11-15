@@ -159,3 +159,4 @@ tmp/
 output/
 results/
 *.docx
+.claude/settings.local.json
