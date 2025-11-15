@@ -30,18 +30,21 @@ fi
 
 cp -r dist/ACC/* "$APPDIR/usr/bin/"
 
-# Create desktop file
+# Create desktop file in AppDir root (required by appimagetool)
 echo "Creating desktop entry..."
-cat > "$APPDIR/usr/share/applications/ACC.desktop" << EOF
+cat > "$APPDIR/ACC.desktop" << EOF
 [Desktop Entry]
 Type=Application
 Name=ACC
-Comment=Area Affinity in Concentric Circles
+Comment=Area Affinity in Concentric Circles - Hierarchical cluster visualization
 Exec=ACC
 Icon=ACC
 Categories=Science;Education;DataVisualization;
 Terminal=false
 EOF
+
+# Also copy to standard location
+cp "$APPDIR/ACC.desktop" "$APPDIR/usr/share/applications/ACC.desktop"
 
 # Create AppRun script
 echo "Creating AppRun script..."
@@ -57,16 +60,16 @@ EOF
 
 chmod +x "$APPDIR/AppRun"
 
-# Copy icon if it exists (placeholder for now)
-# If you have an icon file, uncomment and adjust:
-# cp images/acc_icon.png "$APPDIR/usr/share/icons/hicolor/256x256/apps/ACC.png"
-# ln -s usr/share/icons/hicolor/256x256/apps/ACC.png "$APPDIR/ACC.png"
-
-# Create a simple icon placeholder if no icon exists
-if [ ! -f "$APPDIR/ACC.png" ]; then
-    echo "No icon found, using placeholder"
-    # You can add icon later
-    touch "$APPDIR/ACC.png"
+# Create a simple PNG icon (1x1 transparent pixel)
+echo "Creating placeholder icon..."
+# Create a minimal 256x256 PNG icon using ImageMagick if available, or a 1x1 pixel fallback
+if command -v convert &> /dev/null; then
+    convert -size 256x256 xc:transparent "$APPDIR/ACC.png"
+    cp "$APPDIR/ACC.png" "$APPDIR/usr/share/icons/hicolor/256x256/apps/ACC.png"
+else
+    # Minimal valid PNG (1x1 transparent pixel) - base64 encoded
+    echo "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==" | base64 -d > "$APPDIR/ACC.png"
+    cp "$APPDIR/ACC.png" "$APPDIR/usr/share/icons/hicolor/256x256/apps/ACC.png"
 fi
 
 # Build AppImage
