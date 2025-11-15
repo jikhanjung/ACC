@@ -7,3 +7,4 @@ __app_name__ = "ACC"
 __author__ = "jikhanjung"
 __description__ = "Area Affinity in Concentric Circles - Hierarchical cluster visualization"
 __url__ = "https://github.com/jikhanjung/ACC"
+# Trigger build
