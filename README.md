@@ -1,5 +1,8 @@
 # ACC (Adaptive Cluster Circle)
 
+[![Tests](https://github.com/jikhanjung/ACC/workflows/Tests/badge.svg)](https://github.com/jikhanjung/ACC/actions)
+[![codecov](https://codecov.io/gh/jikhanjung/ACC/branch/main/graph/badge.svg)](https://codecov.io/gh/jikhanjung/ACC)
+
 ACC는 두 종류의 덴드로그램(하위 subordinate, 포괄 inclusive)에서 유사도 정보를 결합해, 클러스터 간의 상대적 관계를 원형 도식으로 시각화하는 알고리즘입니다.
 
 ## 기능
