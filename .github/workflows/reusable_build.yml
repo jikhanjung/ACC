@@ -113,14 +113,15 @@ jobs:
 
       - name: Install macOS system dependencies
         run: |
-          brew install qt5 create-dmg
-          echo "export PATH=/usr/local/opt/qt5/bin:$PATH" >> ~/.bash_profile
+          brew install create-dmg
 
       - name: Install Python dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install -r requirements.txt
-          pip install pyinstaller
+          # Install PyQt5 without pinned version to get binary wheel
+          pip install PyQt5 PyQt5-sip
+          # Install other requirements
+          pip install numpy scipy pandas matplotlib pyinstaller
 
       - name: Get Version String
         id: get_version

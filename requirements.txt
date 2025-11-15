@@ -3,8 +3,9 @@
 # PyQt5 GUI Application Dependencies
 
 # GUI Framework
-PyQt5==5.15.9
-PyQt5-sip==12.12.2
+# PyQt5 5.15.x - using flexible versioning for better platform compatibility
+PyQt5>=5.15.0
+PyQt5-sip>=12.12.0
 
 # Scientific Computing (versions compatible with Python 3.11)
 numpy>=2.0.0
