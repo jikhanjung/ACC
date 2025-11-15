@@ -210,14 +210,27 @@ def validate_similarity_matrix(matrix):
             if arr.shape[0] != arr.shape[1]:
                 return False, "Matrix must be square"
 
+            # Check value range
+            if np.any(arr < 0.0) or np.any(arr > 1.0):
+                min_val = np.min(arr)
+                max_val = np.max(arr)
+                return False, f"All values must be between 0.0 and 1.0 (found min={min_val:.3f}, max={max_val:.3f})"
+
             # Check symmetry
-            if not np.allclose(arr, arr.T):
-                return False, "Matrix is not symmetric"
+            if not np.allclose(arr, arr.T, rtol=1e-5, atol=1e-8):
+                # Find the asymmetric elements
+                diff = np.abs(arr - arr.T)
+                max_diff_idx = np.unravel_index(np.argmax(diff), diff.shape)
+                i, j = max_diff_idx
+                return False, f"Matrix is not symmetric: matrix[{i},{j}]={arr[i,j]:.6f} but matrix[{j},{i}]={arr[j,i]:.6f}"
 
             # Check diagonal
             diag = np.diag(arr)
-            if not np.allclose(diag, 1.0):
-                return False, "Diagonal elements should be 1.0"
+            if not np.allclose(diag, 1.0, rtol=1e-5, atol=1e-8):
+                bad_diag_idx = np.where(np.abs(diag - 1.0) > 0.01)[0]
+                if len(bad_diag_idx) > 0:
+                    idx = bad_diag_idx[0]
+                    return False, f"Diagonal element [{idx},{idx}] is {diag[idx]:.6f}, should be 1.0"
 
         return True, "Matrix is valid"
 

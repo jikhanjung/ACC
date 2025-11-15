@@ -15,7 +15,8 @@ from PyQt5.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QTableWidget, QTableWidgetItem, QPushButton, QFileDialog,
     QLabel, QSlider, QMessageBox, QScrollArea, QCheckBox, QSplitter,
-    QDialog, QListWidget, QInputDialog, QDialogButtonBox, QTextEdit, QLineEdit
+    QDialog, QListWidget, QInputDialog, QDialogButtonBox, QTextEdit, QLineEdit,
+    QMenu, QAction
 )
 from PyQt5.QtCore import Qt, QTimer
 
@@ -603,6 +604,20 @@ class StepMatrixWidget(QWidget):
                     )
                     return
 
+                # Validate similarity matrix properties
+                valid, msg = validate_similarity_matrix(df.values)
+                if not valid:
+                    QMessageBox.warning(
+                        self,
+                        "Invalid Similarity Matrix",
+                        f"The matrix does not meet similarity matrix requirements:\n\n{msg}\n\n"
+                        f"Requirements:\n"
+                        f"- Diagonal values must be 1.0\n"
+                        f"- Matrix must be symmetric (matrix[i,j] = matrix[j,i])\n"
+                        f"- All values should be between 0.0 and 1.0"
+                    )
+                    return
+
                 # Store data
                 self.matrix_data = df
 
@@ -615,8 +630,9 @@ class StepMatrixWidget(QWidget):
                 # Set up slider
                 num_steps = self.step_manager.get_num_steps()
                 self.step_slider.setMaximum(num_steps - 1)
-                self.step_slider.setValue(0)
-                self.current_step = 0
+                # Set to last step to show final dendrogram
+                self.step_slider.setValue(num_steps - 1)
+                self.current_step = num_steps - 1
 
                 # Show step controls
                 self.step_controls.setVisible(True)
@@ -1032,6 +1048,11 @@ class StepDendrogramWidget(QWidget):
         # Matplotlib figure
         self.figure = Figure(figsize=(5, 4))
         self.canvas = FigureCanvas(self.figure)
+
+        # Enable right-click context menu for saving
+        self.canvas.setContextMenuPolicy(Qt.CustomContextMenu)
+        self.canvas.customContextMenuRequested.connect(self.show_context_menu)
+
         layout.addWidget(self.canvas)
 
         # Info label
@@ -1041,6 +1062,40 @@ class StepDendrogramWidget(QWidget):
         layout.addWidget(self.info_label)
 
         self.setLayout(layout)
+
+    def show_context_menu(self, pos):
+        """Show context menu for saving image"""
+        menu = QMenu(self)
+
+        save_action = QAction("Save Image As...", self)
+        save_action.triggered.connect(self.save_image)
+        menu.addAction(save_action)
+
+        menu.exec_(self.canvas.mapToGlobal(pos))
+
+    def save_image(self):
+        """Save the current figure to an image file"""
+        file_path, _ = QFileDialog.getSaveFileName(
+            self,
+            "Save Dendrogram Image",
+            f"{self.title.replace(' ', '_')}_dendrogram.png",
+            "PNG Files (*.png);;PDF Files (*.pdf);;SVG Files (*.svg);;All Files (*)"
+        )
+
+        if file_path:
+            try:
+                self.figure.savefig(file_path, dpi=300, bbox_inches='tight')
+                QMessageBox.information(
+                    self,
+                    "Success",
+                    f"Image saved successfully to:\n{file_path}"
+                )
+            except Exception as e:
+                QMessageBox.critical(
+                    self,
+                    "Error",
+                    f"Failed to save image:\n{str(e)}"
+                )
 
     def on_checkbox_changed(self):
         """Called when checkbox state changes"""
@@ -1144,6 +1199,10 @@ class StepDendrogramWidget(QWidget):
                 # Invert x-axis so high similarity (left) to low similarity (right)
                 ax.invert_xaxis()
 
+                # Move y-axis labels to the right side
+                ax.yaxis.tick_right()
+                ax.yaxis.set_label_position('right')
+
                 ax.set_xlabel('Similarity', fontsize=9)
                 ax.tick_params(axis='y', labelsize=9)
                 ax.tick_params(axis='x', labelsize=8)
@@ -1244,6 +1303,11 @@ class ACCVisualizationWidget(QWidget):
         # Matplotlib figure
         self.figure = Figure(figsize=(6, 6))
         self.canvas = FigureCanvas(self.figure)
+
+        # Enable right-click context menu for saving
+        self.canvas.setContextMenuPolicy(Qt.CustomContextMenu)
+        self.canvas.customContextMenuRequested.connect(self.show_context_menu)
+
         layout.addWidget(self.canvas, stretch=1)
 
         # Info label
@@ -1253,6 +1317,40 @@ class ACCVisualizationWidget(QWidget):
         layout.addWidget(self.info_label)
 
         self.setLayout(layout)
+
+    def show_context_menu(self, pos):
+        """Show context menu for saving image"""
+        menu = QMenu(self)
+
+        save_action = QAction("Save Image As...", self)
+        save_action.triggered.connect(self.save_image)
+        menu.addAction(save_action)
+
+        menu.exec_(self.canvas.mapToGlobal(pos))
+
+    def save_image(self):
+        """Save the current figure to an image file"""
+        file_path, _ = QFileDialog.getSaveFileName(
+            self,
+            "Save ACC Visualization",
+            "ACC_visualization.png",
+            "PNG Files (*.png);;PDF Files (*.pdf);;SVG Files (*.svg);;All Files (*)"
+        )
+
+        if file_path:
+            try:
+                self.figure.savefig(file_path, dpi=300, bbox_inches='tight')
+                QMessageBox.information(
+                    self,
+                    "Success",
+                    f"Image saved successfully to:\n{file_path}"
+                )
+            except Exception as e:
+                QMessageBox.critical(
+                    self,
+                    "Error",
+                    f"Failed to save image:\n{str(e)}"
+                )
 
     def on_step_changed(self, value):
         """Handle slider value change"""
@@ -1301,12 +1399,14 @@ class ACCVisualizationWidget(QWidget):
         self.plot_acc_step(step_info)
 
     def set_acc_steps(self, steps):
-        """Set ACC steps and display first step"""
+        """Set ACC steps and display last step"""
         self.acc_steps = steps
         if steps:
             self.step_slider.setMaximum(len(steps) - 1)
-            self.step_slider.setValue(0)
-            self.current_step = 0
+            # Set to last step to show final ACC visualization
+            last_step = len(steps) - 1
+            self.step_slider.setValue(last_step)
+            self.current_step = last_step
             self.step_controls.setVisible(True)
             self.update_step_display()
         else:
@@ -1372,7 +1472,10 @@ class ACCVisualizationWidget(QWidget):
         sorted_radii = sorted(all_radii)
         circle_colors_concentric = plt.cm.rainbow(np.linspace(0, 1, len(sorted_radii)))
 
+        # Create radius-to-color mapping
+        radius_to_color = {}
         for idx, radius in enumerate(sorted_radii):
+            radius_to_color[radius] = circle_colors_concentric[idx]
             circle = plt.Circle((0, 0), radius, fill=False,
                               edgecolor=circle_colors_concentric[idx],
                               linewidth=2,
@@ -1385,13 +1488,17 @@ class ACCVisualizationWidget(QWidget):
         total_members = sum(len(c.get("members", set())) for c in clusters)
 
         for member, (x, y, r) in all_points.items():
+            # Find the closest radius in sorted_radii to get the matching color
+            rounded_r = round(r, 3)
+
             # Use different colors for highlighted vs existing members
             if member in highlighted_members:
                 color = 'red'  # Highlighted (newly added)
                 markersize = 12
                 label_color = 'red'
             else:
-                color = 'darkblue'
+                # Use the color of the concentric circle this point is on
+                color = radius_to_color.get(rounded_r, circle_colors_concentric[0])
                 markersize = 10
                 label_color = 'black'
 
