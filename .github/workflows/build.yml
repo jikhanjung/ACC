@@ -1,6 +1,11 @@
-name: Manual Build
+name: Build
+
+permissions:
+  contents: write
 
 on:
+  push:
+    branches: [ "main" ]
   workflow_dispatch:
     inputs:
       build_number:
@@ -9,7 +14,8 @@ on:
         default: ''
 
 jobs:
-  build:
+  call-build-workflow:
+    if: "!contains(github.event.head_commit.message, '[skip ci]')"
     uses: ./.github/workflows/reusable_build.yml
     with:
       build_number: ${{ github.event.inputs.build_number || github.run_number }}
