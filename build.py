@@ -3,19 +3,21 @@ ACC Build Script
 Builds executable using PyInstaller and creates installers for Windows, macOS, and Linux
 """
 
+import json
 import os
 import platform
 import re
 import shutil
 import subprocess
 import tempfile
-from datetime import date, datetime
+from datetime import UTC, datetime
 from pathlib import Path
-import json
 
 # Import version from centralized version file
 try:
-    from version import __version__ as VERSION
+    from version import __version__ as version
+
+    VERSION = version
 except ImportError:
     # Fallback: extract from version.py file
     def get_version_from_file():
@@ -61,8 +63,7 @@ def run_pyinstaller(args):
                     for item in (dist_path / "ACC").iterdir():
                         print(f"  {item}")
             raise FileNotFoundError(f"Expected executable not found: {exe_path}")
-        else:
-            print(f"Executable created: {exe_path}")
+        print(f"Executable created: {exe_path}")
 
     except subprocess.CalledProcessError as e:
         print(f"PyInstaller failed with exit code {e.returncode}")
@@ -148,7 +149,7 @@ def get_platform_separator():
 # --- Configuration ---
 NAME = "ACC"
 BUILD_NUMBER = os.environ.get("BUILD_NUMBER", "local")
-today = date.today()
+today = datetime.now(UTC).date()
 DATE = today.strftime("%Y%m%d")
 
 print(f"Building {NAME} version {VERSION}")
@@ -160,7 +161,7 @@ build_info = {
     "version": VERSION,
     "build_number": BUILD_NUMBER,
     "build_date": DATE,
-    "build_year": datetime.now().year,
+    "build_year": datetime.now(UTC).year,
     "platform": platform.system().lower(),
 }
 with open("build_info.json", "w") as f:
@@ -181,9 +182,8 @@ pyinstaller_args = [
     "--noconfirm",
     "--onedir",  # Create one-directory bundle
     "--windowed",  # Hide console window
-    f"--name=ACC",
+    "--name=ACC",
     f"--add-data=data{sep}data",  # Include data directory
-    f"--add-data=images{sep}images",  # Include images directory
     f"--add-data=build_info.json{sep}.",  # Include build info
     "acc_gui.py",  # Main script
 ]
@@ -208,7 +208,7 @@ if platform.system() == "Windows":
         print("Creating portable ZIP instead...")
         # Create portable ZIP
         zip_name = f"ACC-Windows-Portable-v{VERSION}-build{BUILD_NUMBER}"
-        shutil.make_archive(zip_name, 'zip', 'dist/ACC')
+        shutil.make_archive(zip_name, "zip", "dist/ACC")
         print(f"Created {zip_name}.zip")
 
 elif platform.system() == "Darwin":
@@ -220,4 +220,4 @@ elif platform.system() == "Linux":
     print("Use packaging/linux/create_appimage.sh to create AppImage")
 
 print("\n=== Build Complete ===")
-print(f"Executable location: dist/ACC/")
+print("Executable location: dist/ACC/")
