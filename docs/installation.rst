@@ -91,9 +91,11 @@
 
 **오른쪽 패널**: ACC 동심원 시각화
 
-.. image:: images/01_main_window.png
+.. figure:: images/01_main_window.png
    :alt: 메인 화면
    :align: center
+
+   ACC 프로그램의 메인 화면입니다. 왼쪽에는 Similarity Matrix, 중앙에는 Dendrogram, 오른쪽에는 ACC 동심원 시각화가 배치되어 있습니다.
 
 다음 단계
 ----------

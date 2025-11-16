@@ -59,9 +59,11 @@ Similarity matrix CSV는 다음 규칙을 따라야 합니다:
    J,0.9,0.8  ← 1.0이어야 함
    T,0.8,1.0
 
-.. image:: images/10_csv_error.png
+.. figure:: images/10_csv_error.png
    :alt: CSV 오류 메시지
    :align: center
+
+   CSV 파일에 오류가 있을 때 표시되는 오류 메시지 대화상자입니다. 어떤 문제가 발생했는지 구체적인 오류 내용이 표시됩니다.
 
 데이터 준비 가이드
 ------------------

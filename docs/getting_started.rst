@@ -36,13 +36,17 @@
    CSV 로드 후 dendrogram과 ACC가 자동으로 마지막 단계(완성된 상태)로 표시됩니다.
    단계별 과정을 보려면 슬라이더를 왼쪽으로 이동하세요.
 
-.. image:: images/02_sample_loaded.png
+.. figure:: images/02_sample_loaded.png
    :alt: 샘플 데이터 로드 완료
    :align: center
 
-.. image:: images/03_acc_generated.png
+   샘플 CSV 파일을 로드하면 자동으로 Dendrogram과 ACC 시각화가 생성됩니다. 두 매트릭스 데이터가 모두 로드된 상태입니다.
+
+.. figure:: images/03_acc_generated.png
    :alt: ACC 생성 완료
    :align: center
+
+   완성된 ACC 동심원 시각화입니다. 각 멤버가 원 위에 배치되고, 클러스터 관계가 동심원으로 표현됩니다.
 
 기본 워크플로우 이해하기
 -------------------------

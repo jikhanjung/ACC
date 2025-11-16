@@ -52,9 +52,11 @@ Merge point를 클릭하여 좌우 branch를 교환할 수 있습니다.
 * Swap 상태는 세션 내에서만 유지
 * 재생성 시 초기화
 
-.. image:: images/07_acc2_interactive.png
+.. figure:: images/07_acc2_interactive.png
    :alt: ACC2 Interactive Features
    :align: center
+
+   ACC2의 인터랙티브 기능을 보여줍니다. 멤버를 선택하면 하이라이트되며, Swap 기능으로 형제 클러스터의 위치를 바꿀 수 있습니다.
 
 이미지 저장
 -----------
@@ -74,13 +76,17 @@ Dendrogram과 ACC 시각화를 이미지 파일로 저장할 수 있습니다.
 
 4. **[저장]** 클릭
 
-.. image:: images/08_save_image_menu.png
+.. figure:: images/08_save_image_menu.png
    :alt: 이미지 저장 우클릭 메뉴
    :align: center
 
-.. image:: images/09_save_dialog.png
+   시각화 영역에서 우클릭하면 나타나는 메뉴입니다. "Save Image As..." 옵션을 선택하여 이미지를 저장할 수 있습니다.
+
+.. figure:: images/09_save_dialog.png
    :alt: 이미지 저장 대화상자
    :align: center
+
+   파일 저장 대화상자에서 파일 형식(PNG, PDF, SVG)과 저장 위치를 선택할 수 있습니다.
 
 지원하는 파일 형식
 ~~~~~~~~~~~~~~~~~~

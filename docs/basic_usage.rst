@@ -63,9 +63,11 @@ Matrix 테이블 구조
 * 회색 셀에 마우스를 올리면 해당 셀이 왜 편집 불가인지 툴팁으로 확인 가능
 * Upper triangle만 값을 입력하면 대칭성이 자동으로 유지됨
 
-.. image:: images/04_matrix_editing.png
+.. figure:: images/04_matrix_editing.png
    :alt: Matrix 편집
    :align: center
+
+   Similarity Matrix를 직접 편집하는 화면입니다. 흰색 셀은 편집 가능하며, 회색 셀은 대칭성 또는 대각선 제약으로 편집이 불가능합니다.
 
 Dendrogram 단계별 보기
 -----------------------
@@ -104,9 +106,11 @@ Dendrogram 단계별 보기
 
    **CSV 로드 시 자동으로 마지막 단계로 이동**하여 완성된 결과를 즉시 확인할 수 있습니다.
 
-.. image:: images/05_dendrogram_steps.png
+.. figure:: images/05_dendrogram_steps.png
    :alt: Dendrogram 단계별 보기
    :align: center
+
+   슬라이더를 사용하여 Dendrogram의 클러스터링 과정을 단계별로 확인할 수 있습니다. 각 단계에서 어떤 클러스터들이 병합되는지 시각적으로 추적할 수 있습니다.
 
 ACC 시각화 읽기
 ----------------
@@ -150,9 +154,11 @@ ACC 시각화는 여러 겹의 동심원으로 구성됩니다:
 * **빨간색 점**: Merge point (ACC2)
 * **회색 선**: 계층 연결선
 
-.. image:: images/06_acc_detail.png
+.. figure:: images/06_acc_detail.png
    :alt: ACC 시각화 상세
    :align: center
+
+   ACC 동심원 시각화의 상세 예시입니다. 각 멤버의 위치, 클러스터 경계(동심원), 그리고 계층 관계(연결선)를 확인할 수 있습니다.
 
 다음 단계
 ----------
