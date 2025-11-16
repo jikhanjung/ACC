@@ -3,7 +3,7 @@
 
 [project]
 name = "ACC"
-version = "0.1.0"
+version = "0.0.3"
 description = "Area Affinity in Concentric Circles - Hierarchical cluster visualization"
 authors = [
     {name = "jikhanjung"}

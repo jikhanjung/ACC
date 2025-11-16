@@ -399,7 +399,7 @@ in the Software without restriction...
 
 ## 📊 프로젝트 상태
 
-- **버전**: 0.1.0
+- **버전**: 0.0.3
 - **Python**: 3.11, 3.12
 - **테스트**: [![Tests](https://github.com/jikhanjung/ACC/workflows/Tests/badge.svg)](https://github.com/jikhanjung/ACC/actions)
 - **커버리지**: [![codecov](https://codecov.io/gh/jikhanjung/ACC/branch/main/graph/badge.svg)](https://codecov.io/gh/jikhanjung/ACC)

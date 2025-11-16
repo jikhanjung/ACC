@@ -13,6 +13,12 @@ coverage[toml]>=7.10.0,<8.0     # Coverage with TOML config support
 ruff>=0.13.0                    # Fast Python linter and formatter
 pre-commit>=4.0.0               # Pre-commit hook management
 
+# Version Management
+semver>=3.0.0                   # Semantic versioning
+
+# Documentation Tools
+pypandoc>=1.11                  # Markdown to PDF conversion (optional)
+
 # Optional: Enable when adding type hints
 # mypy>=1.11.0                  # Static type checker
 # types-all                     # Type stubs for common libraries
