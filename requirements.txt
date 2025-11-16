@@ -15,5 +15,8 @@ pandas>=2.0.0
 # Visualization (3.9+ for NumPy 2.x compatibility)
 matplotlib>=3.9.0
 
+# Version management
+semver>=3.0.0
+
 # Build tool
 pyinstaller>=5.13.0
