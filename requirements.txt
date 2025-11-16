@@ -1,5 +1,5 @@
 # ACC (Adaptive Cluster Circle) Requirements
-# Python 3.11 recommended for full compatibility
+# Python 3.11+ required (datetime.UTC support)
 # PyQt5 GUI Application Dependencies
 
 # GUI Framework
