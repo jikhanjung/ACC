@@ -90,12 +90,11 @@ def generate_pdf(input_file: str, output_file: str, engine: str = "xelatex"):
     if engine == "pdflatex" or engine == "xelatex":
         extra_args.append(f"--pdf-engine={engine}")
 
-        # Add LaTeX packages for better image caption handling
+        # Add LaTeX header file for better image caption handling
+        # Use relative path since we change to doc_dir before running pandoc
         extra_args.extend([
-            "-V",
-            "header-includes=\\usepackage{caption}",
-            "-V",
-            "header-includes=\\captionsetup[figure]{position=bottom,skip=10pt}",
+            "--include-in-header",
+            "latex_header.tex",
         ])
 
         # XeLaTeX is required for Korean/Unicode support
