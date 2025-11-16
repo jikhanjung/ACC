@@ -64,33 +64,38 @@ jobs:
             echo "InnoSetup/Output does not exist"
           }
 
-      - name: Zip Windows Installer or Portable Build
+      - name: Prepare Windows artifacts
         shell: pwsh
         if: success()
         run: |
-          # Check for installer in InnoSetup/Output/
+          # Check for InnoSetup installer
           $installerFound = $false
           if (Test-Path "InnoSetup/Output/") {
+            echo "=== InnoSetup/Output/ directory contents ==="
+            Get-ChildItem -Path "InnoSetup/Output/" -Recurse
+
             $installerPath = Get-ChildItem -Path "InnoSetup/Output/" -Filter "*.exe" -ErrorAction SilentlyContinue | Select-Object -First 1
             if ($installerPath) {
-              $zipFileName = "ACC-Windows-Installer-v${{ steps.get_version.outputs.VERSION }}-build${{ inputs.build_number }}.zip"
-              Compress-Archive -Path $installerPath.FullName -DestinationPath $zipFileName
-              echo "Zipped installer to $zipFileName"
+              echo "Found InnoSetup installer: $($installerPath.FullName)"
               $installerFound = $true
             }
           }
 
-          # If no installer, create portable zip
-          if (-not $installerFound) {
-            echo "No installer found, creating portable zip"
-            $zipFileName = "ACC-Windows-Portable-v${{ steps.get_version.outputs.VERSION }}-build${{ inputs.build_number }}.zip"
-            if (Test-Path "dist/ACC") {
-              Compress-Archive -Path "dist/ACC/*" -DestinationPath $zipFileName
-              echo "Created portable zip: $zipFileName"
-            } else {
-              echo "ERROR: dist/ACC directory not found"
-              exit 1
-            }
+          # Always create portable zip as fallback/alternative
+          echo "Creating portable zip"
+          $zipFileName = "ACC-Windows-Portable-v${{ steps.get_version.outputs.VERSION }}-build${{ inputs.build_number }}.zip"
+          if (Test-Path "dist/ACC") {
+            Compress-Archive -Path "dist/ACC/*" -DestinationPath $zipFileName
+            echo "Created portable zip: $zipFileName"
+          } else {
+            echo "ERROR: dist/ACC directory not found"
+            exit 1
+          }
+
+          if ($installerFound) {
+            echo "Build completed with InnoSetup installer and portable ZIP"
+          } else {
+            echo "Build completed with portable ZIP only (no InnoSetup installer)"
           }
 
       - name: Upload Windows artifact
@@ -99,6 +104,7 @@ jobs:
           name: acc-windows
           path: |
             ACC-Windows-*.zip
+            InnoSetup/Output/*.exe
 
   build-macos:
     runs-on: macos-latest

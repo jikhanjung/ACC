@@ -77,6 +77,11 @@ jobs:
             } >> $GITHUB_OUTPUT
           fi
 
+      - name: List release files
+        run: |
+          echo "=== Release files to upload ==="
+          find release-files -type f \( -name "*.zip" -o -name "*.exe" -o -name "*.dmg" -o -name "*.AppImage" \)
+
       - name: Create Release
         uses: softprops/action-gh-release@v2
         with:
@@ -86,6 +91,7 @@ jobs:
           prerelease: ${{ contains(github.ref_name, '-alpha') || contains(github.ref_name, '-beta') || contains(github.ref_name, '-rc') }}
           files: |
             release-files/acc-windows/*.zip
+            release-files/acc-windows/*.exe
             release-files/acc-macos/*.dmg
             release-files/acc-linux/*.AppImage
             SHA256SUMS.txt

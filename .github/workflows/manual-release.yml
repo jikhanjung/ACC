@@ -80,6 +80,7 @@ jobs:
           prerelease: ${{ github.event.inputs.prerelease }}
           files: |
             release-files/acc-windows/ACC-Windows-*.zip
+            release-files/acc-windows/ACC_*.exe
             release-files/acc-macos/ACC-macOS-Installer-*.dmg
             release-files/acc-linux/ACC-Linux-*.AppImage
         env:
