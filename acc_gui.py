@@ -8,36 +8,76 @@ Three-column layout with step-by-step clustering visualization:
 - Right: ACC Concentric Circles
 """
 
+# Import matplotlib components with proper backend setup
+import math
+import os
 import sys
+from pathlib import Path
+
 import numpy as np
 import pandas as pd
-from PyQt5.QtWidgets import (
-    QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
-    QTableWidget, QTableWidgetItem, QPushButton, QFileDialog,
-    QLabel, QSlider, QMessageBox, QScrollArea, QCheckBox, QSplitter,
-    QDialog, QListWidget, QInputDialog, QDialogButtonBox, QTextEdit, QLineEdit,
-    QMenu, QAction
-)
 from PyQt5.QtCore import Qt, QTimer
+from PyQt5.QtWidgets import (
+    QAction,
+    QApplication,
+    QCheckBox,
+    QDialog,
+    QDialogButtonBox,
+    QFileDialog,
+    QHBoxLayout,
+    QLabel,
+    QLineEdit,
+    QListWidget,
+    QMainWindow,
+    QMenu,
+    QMessageBox,
+    QPushButton,
+    QScrollArea,
+    QSlider,
+    QSplitter,
+    QTableWidget,
+    QTableWidgetItem,
+    QTextEdit,
+    QVBoxLayout,
+    QWidget,
+)
 
-# Import matplotlib components with proper backend setup
-import os
-os.environ['QT_API'] = 'pyqt5'
+os.environ["QT_API"] = "pyqt5"
 
 import matplotlib
-matplotlib.use('Qt5Agg')
 
-from matplotlib.figure import Figure
-import matplotlib.pyplot as plt
-from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
-from scipy.cluster.hierarchy import dendrogram, linkage
-from scipy.spatial.distance import squareform
-from acc_utils import validate_similarity_matrix, dict_matrix_from_dataframe, build_acc_from_matrices, build_acc_from_matrices_steps, build_acc_from_matrices_iterative
-from clustering_steps import ClusteringStepManager
-from acc_core_acc2 import build_acc2, pol2cart, calculate_merge_points, generate_connection_lines
+matplotlib.use("Qt5Agg")
+
 import logging
 from io import StringIO
+
 import matplotlib.patches as mpl_patches
+import matplotlib.pyplot as plt
+from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
+from matplotlib.figure import Figure
+from scipy.cluster.hierarchy import dendrogram
+
+from acc_core_acc2 import build_acc2, calculate_merge_points, generate_connection_lines, pol2cart
+from acc_utils import (
+    build_acc_from_matrices_iterative,
+    dict_matrix_from_dataframe,
+    validate_similarity_matrix,
+)
+from clustering_steps import ClusteringStepManager
+
+
+def get_resource_path(relative_path):
+    """Get absolute path to resource, works for dev and for PyInstaller"""
+    try:
+        # PyInstaller creates a temp folder and stores path in _MEIPASS
+        base_path = Path(sys._MEIPASS)
+    except AttributeError:
+        # Running in normal Python environment
+        base_path = Path(__file__).parent
+
+    return base_path / relative_path
+
+
 class AreaListEditorDialog(QDialog):
     """Dialog for editing the list of areas (row/column labels)"""
 
@@ -177,9 +217,7 @@ class AreaListEditorDialog(QDialog):
         layout.addLayout(content_layout)
 
         # Dialog buttons
-        button_box = QDialogButtonBox(
-            QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
-        )
+        button_box = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
         button_box.accepted.connect(self.accept)
         button_box.rejected.connect(self.reject)
         layout.addWidget(button_box)
@@ -295,7 +333,7 @@ class AreaListEditorDialog(QDialog):
             f"Are you sure you want to delete area '{area_name}'?\n\n"
             f"This will remove it from both matrices and cannot be undone.",
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-            QMessageBox.StandardButton.No
+            QMessageBox.StandardButton.No,
         )
 
         if reply == QMessageBox.StandardButton.Yes:
@@ -320,7 +358,7 @@ class AreaListEditorDialog(QDialog):
             "labels": self.current_labels,
             "sub_matrix": self.sub_matrix_df,
             "inc_matrix": self.inc_matrix_df,
-            "modified": self.modified
+            "modified": self.modified,
         }
 
 
@@ -427,15 +465,12 @@ class LogViewerDialog(QDialog):
     def save_to_file(self):
         """Save log to file"""
         filename, _ = QFileDialog.getSaveFileName(
-            self,
-            "Save Log File",
-            "acc_generation_log.txt",
-            "Text Files (*.txt);;All Files (*)"
+            self, "Save Log File", "acc_generation_log.txt", "Text Files (*.txt);;All Files (*)"
         )
 
         if filename:
             try:
-                with open(filename, 'w', encoding='utf-8') as f:
+                with open(filename, "w", encoding="utf-8") as f:
                     f.write(self.log_text)
                 QMessageBox.information(self, "Saved", f"Log saved to:\n{filename}")
             except Exception as e:
@@ -583,12 +618,10 @@ class StepMatrixWidget(QWidget):
 
     def load_csv(self):
         """Load similarity matrix from CSV file"""
-        file_path, _ = QFileDialog.getOpenFileName(
-            self,
-            "Open CSV File",
-            "",
-            "CSV Files (*.csv);;All Files (*)"
-        )
+        # Start in data directory where sample files are located
+        data_dir = str(get_resource_path("data"))
+
+        file_path, _ = QFileDialog.getOpenFileName(self, "Open CSV File", data_dir, "CSV Files (*.csv);;All Files (*)")
 
         if file_path:
             try:
@@ -598,9 +631,7 @@ class StepMatrixWidget(QWidget):
                 # Validate it's a square matrix
                 if df.shape[0] != df.shape[1]:
                     QMessageBox.warning(
-                        self,
-                        "Invalid Matrix",
-                        "Matrix must be square (same number of rows and columns)"
+                        self, "Invalid Matrix", "Matrix must be square (same number of rows and columns)"
                     )
                     return
 
@@ -614,7 +645,7 @@ class StepMatrixWidget(QWidget):
                         f"Requirements:\n"
                         f"- Diagonal values must be 1.0\n"
                         f"- Matrix must be symmetric (matrix[i,j] = matrix[j,i])\n"
-                        f"- All values should be between 0.0 and 1.0"
+                        f"- All values should be between 0.0 and 1.0",
                     )
                     return
 
@@ -622,10 +653,7 @@ class StepMatrixWidget(QWidget):
                 self.matrix_data = df
 
                 # Create step manager
-                self.step_manager = ClusteringStepManager(
-                    df.values,
-                    df.index.tolist()
-                )
+                self.step_manager = ClusteringStepManager(df.values, df.index.tolist())
 
                 # Set up slider
                 num_steps = self.step_manager.get_num_steps()
@@ -642,16 +670,13 @@ class StepMatrixWidget(QWidget):
                 self.info_label.setStyleSheet("color: green; font-size: 10px;")
 
                 # Notify parent which matrix was loaded
-                if hasattr(self.parent(), 'on_matrix_loaded'):
+                if hasattr(self.parent(), "on_matrix_loaded"):
                     self.parent().on_matrix_loaded(self.matrix_type)
 
             except Exception as e:
-                QMessageBox.critical(
-                    self,
-                    "Error Loading File",
-                    f"Failed to load CSV file:\n{str(e)}"
-                )
+                QMessageBox.critical(self, "Error Loading File", f"Failed to load CSV file:\n{str(e)}")
                 import traceback
+
                 traceback.print_exc()
 
     def on_step_changed(self, value):
@@ -660,7 +685,7 @@ class StepMatrixWidget(QWidget):
         self.update_step_display()
 
         # Notify parent
-        if hasattr(self.parent(), 'on_step_changed'):
+        if hasattr(self.parent(), "on_step_changed"):
             self.parent().on_step_changed()
 
     def first_step(self):
@@ -688,13 +713,13 @@ class StepMatrixWidget(QWidget):
             next_step_num = self.current_step + 1
             next_step_info = self.step_manager.get_step(next_step_num)
 
-            if next_step_info and next_step_info['merged_pair']:
+            if next_step_info and next_step_info["merged_pair"]:
                 # Get the clusters that will be merged
-                cluster_i, cluster_j = next_step_info['merged_pair']
+                cluster_i, cluster_j = next_step_info["merged_pair"]
 
                 # Find their indices in current step
                 current_step_info = self.step_manager.get_step(self.current_step)
-                current_labels = current_step_info['labels']
+                current_labels = current_step_info["labels"]
 
                 idx_i = self._find_cluster_index(current_labels, cluster_i)
                 idx_j = self._find_cluster_index(current_labels, cluster_j)
@@ -755,7 +780,7 @@ class StepMatrixWidget(QWidget):
         elif self.step_manager and self.current_step > 0:
             # Fallback: find the last merged cluster (should not happen normally)
             step_info = self.step_manager.get_step(self.current_step)
-            labels = step_info['labels']
+            labels = step_info["labels"]
             for idx, label in enumerate(labels):
                 if isinstance(label, (tuple, list)):
                     self.merged_cluster_idx = idx
@@ -802,7 +827,7 @@ class StepMatrixWidget(QWidget):
         else:
             self.step_desc_label.setText(self.step_manager.get_step_description(self.current_step))
             # Update table with current step matrix
-            self.populate_table(step_info['matrix'], step_info['labels'])
+            self.populate_table(step_info["matrix"], step_info["labels"])
 
         # Update buttons
         self.first_btn.setEnabled(self.current_step > 0)
@@ -818,7 +843,7 @@ class StepMatrixWidget(QWidget):
         display_labels = []
         for label in labels:
             if isinstance(label, (tuple, list)):
-                display_labels.append('+'.join(str(l) for l in label))
+                display_labels.append("+".join(str(l) for l in label))
             else:
                 display_labels.append(str(label))
 
@@ -925,9 +950,7 @@ class StepMatrixWidget(QWidget):
             value = float(item.text())
             if value < 0.0 or value > 1.0:
                 QMessageBox.warning(
-                    self,
-                    "Invalid Value",
-                    f"Similarity values must be between 0.0 and 1.0\nYou entered: {value}"
+                    self, "Invalid Value", f"Similarity values must be between 0.0 and 1.0\nYou entered: {value}"
                 )
                 # Restore original value
                 if self.matrix_data is not None:
@@ -937,9 +960,7 @@ class StepMatrixWidget(QWidget):
                 return
         except ValueError:
             QMessageBox.warning(
-                self,
-                "Invalid Input",
-                f"Please enter a numeric value between 0.0 and 1.0\nYou entered: '{item.text()}'"
+                self, "Invalid Input", f"Please enter a numeric value between 0.0 and 1.0\nYou entered: '{item.text()}'"
             )
             # Restore original value
             if self.matrix_data is not None:
@@ -954,15 +975,12 @@ class StepMatrixWidget(QWidget):
             self.matrix_data.iloc[col, row] = value  # Mirror to lower triangle (data only)
 
             # Update the step manager with new matrix
-            self.step_manager = ClusteringStepManager(
-                self.matrix_data.values,
-                self.matrix_data.index.tolist()
-            )
+            self.step_manager = ClusteringStepManager(self.matrix_data.values, self.matrix_data.index.tolist())
 
             # Note: Lower triangle cells remain empty (not updated visually)
 
             # Notify parent to update dendrograms
-            if hasattr(self.parent(), 'on_matrix_loaded'):
+            if hasattr(self.parent(), "on_matrix_loaded"):
                 self.parent().on_matrix_loaded(self.matrix_type)
 
     def update_matrix(self, new_matrix_df):
@@ -986,7 +1004,7 @@ class StepMatrixWidget(QWidget):
                 item.setFlags(item.flags() & ~Qt.ItemIsEditable)
                 item.setToolTip("Diagonal cell (always 1.0)")
                 self.table.setItem(0, 0, item)
-                self.info_label.setText(f"✓ Updated: 1 area (need at least 2 for clustering)")
+                self.info_label.setText("✓ Updated: 1 area (need at least 2 for clustering)")
                 self.info_label.setStyleSheet("color: orange; font-size: 10px;")
             else:
                 self.info_label.setText("No data")
@@ -994,10 +1012,7 @@ class StepMatrixWidget(QWidget):
             return
 
         # Recreate step manager
-        self.step_manager = ClusteringStepManager(
-            new_matrix_df.values,
-            new_matrix_df.index.tolist()
-        )
+        self.step_manager = ClusteringStepManager(new_matrix_df.values, new_matrix_df.index.tolist())
 
         # Reset to step 0
         num_steps = self.step_manager.get_num_steps()
@@ -1079,23 +1094,15 @@ class StepDendrogramWidget(QWidget):
             self,
             "Save Dendrogram Image",
             f"{self.title.replace(' ', '_')}_dendrogram.png",
-            "PNG Files (*.png);;PDF Files (*.pdf);;SVG Files (*.svg);;All Files (*)"
+            "PNG Files (*.png);;PDF Files (*.pdf);;SVG Files (*.svg);;All Files (*)",
         )
 
         if file_path:
             try:
-                self.figure.savefig(file_path, dpi=300, bbox_inches='tight')
-                QMessageBox.information(
-                    self,
-                    "Success",
-                    f"Image saved successfully to:\n{file_path}"
-                )
+                self.figure.savefig(file_path, dpi=300, bbox_inches="tight")
+                QMessageBox.information(self, "Success", f"Image saved successfully to:\n{file_path}")
             except Exception as e:
-                QMessageBox.critical(
-                    self,
-                    "Error",
-                    f"Failed to save image:\n{str(e)}"
-                )
+                QMessageBox.critical(self, "Error", f"Failed to save image:\n{str(e)}")
 
     def on_checkbox_changed(self):
         """Called when checkbox state changes"""
@@ -1122,11 +1129,12 @@ class StepDendrogramWidget(QWidget):
 
         if self.current_step == 0:
             # Step 0: no dendrogram yet
-            ax.text(0.5, 0.5, 'Original Matrix\n(No clustering yet)',
-                   ha='center', va='center', fontsize=12, color='gray')
+            ax.text(
+                0.5, 0.5, "Original Matrix\n(No clustering yet)", ha="center", va="center", fontsize=12, color="gray"
+            )
             ax.set_xlim(0, 1)
             ax.set_ylim(0, 1)
-            ax.axis('off')
+            ax.axis("off")
             self.info_label.setText("Step 0: Original matrix")
         else:
             # Draw full dendrogram with partial highlighting
@@ -1142,27 +1150,32 @@ class StepDendrogramWidget(QWidget):
                     cluster_step = k - n + 1  # Which step formed this cluster
 
                     if cluster_step <= self.current_step:
-                        return 'blue'  # Completed
-                    else:
-                        return 'lightgray'  # Not yet completed
+                        return "blue"  # Completed
+                    return "lightgray"  # Not yet completed
 
                 # Plot dendrogram
                 ddata = dendrogram(
                     full_linkage,
                     labels=self.step_manager.original_labels,
                     ax=ax,
-                    orientation='right',
+                    orientation="right",
                     color_threshold=0,
-                    above_threshold_color='blue',
+                    above_threshold_color="blue",
                     link_color_func=link_color_func,
-                    leaf_font_size=10
+                    leaf_font_size=10,
                 )
 
                 # Add vertical line to show current step height
                 if self.current_step < len(full_linkage):
                     current_height = full_linkage[self.current_step - 1, 2]  # distance of current merge
-                    ax.axvline(x=current_height, color='red', linestyle='--',
-                              linewidth=2, alpha=0.7, label=f'Step {self.current_step}')
+                    ax.axvline(
+                        x=current_height,
+                        color="red",
+                        linestyle="--",
+                        linewidth=2,
+                        alpha=0.7,
+                        label=f"Step {self.current_step}",
+                    )
                     ax.legend(fontsize=8)
 
                 # Convert X-axis labels from distance to similarity
@@ -1173,7 +1186,7 @@ class StepDendrogramWidget(QWidget):
 
                 # Convert to similarity and set as labels
                 # similarity = max_sim - distance
-                similarity_labels = [f'{max_sim - x:.3f}' if 0 <= x <= max_sim else '' for x in xticks]
+                similarity_labels = [f"{max_sim - x:.3f}" if 0 <= x <= max_sim else "" for x in xticks]
                 ax.set_xticklabels(similarity_labels)
 
                 # Add similarity values to each merge point if checkbox is checked
@@ -1181,7 +1194,7 @@ class StepDendrogramWidget(QWidget):
                     # Dendrogram data contains coordinates
                     # dcoord[i] = [x1, x2, x2, x3] where x2 is the merge height (distance)
                     # icoord[i] = [y1, y2, y2, y3] where (x2, (y2+y2)/2) is merge point
-                    for i, (xs, ys) in enumerate(zip(ddata['dcoord'], ddata['icoord'])):
+                    for i, (xs, ys) in enumerate(zip(ddata["dcoord"], ddata["icoord"])):
                         # xs = [x1, x2, x2, x3], x2 is the merge distance
                         merge_distance = xs[1]  # or xs[2], they're the same
                         merge_y = (ys[1] + ys[2]) / 2.0  # Middle of horizontal line
@@ -1190,34 +1203,46 @@ class StepDendrogramWidget(QWidget):
                         merge_similarity = max_sim - merge_distance
 
                         # Add text annotation
-                        ax.text(merge_distance, merge_y, f' {merge_similarity:.3f}',
-                               fontsize=8, color='darkblue',
-                               verticalalignment='center',
-                               bbox=dict(boxstyle='round,pad=0.3', facecolor='white',
-                                       edgecolor='lightblue', alpha=0.8))
+                        ax.text(
+                            merge_distance,
+                            merge_y,
+                            f" {merge_similarity:.3f}",
+                            fontsize=8,
+                            color="darkblue",
+                            verticalalignment="center",
+                            bbox=dict(boxstyle="round,pad=0.3", facecolor="white", edgecolor="lightblue", alpha=0.8),
+                        )
 
                 # Invert x-axis so high similarity (left) to low similarity (right)
                 ax.invert_xaxis()
 
                 # Move y-axis labels to the right side
                 ax.yaxis.tick_right()
-                ax.yaxis.set_label_position('right')
+                ax.yaxis.set_label_position("right")
 
-                ax.set_xlabel('Similarity', fontsize=9)
-                ax.tick_params(axis='y', labelsize=9)
-                ax.tick_params(axis='x', labelsize=8)
+                ax.set_xlabel("Similarity", fontsize=9)
+                ax.tick_params(axis="y", labelsize=9)
+                ax.tick_params(axis="x", labelsize=8)
 
                 self.info_label.setText(f"Step {self.current_step}: {self.current_step} merge(s) completed")
                 self.info_label.setStyleSheet("color: green; font-size: 10px;")
 
             except Exception as e:
-                ax.text(0.5, 0.5, f'Error plotting dendrogram:\n{str(e)}',
-                       ha='center', va='center', fontsize=10, color='red')
+                ax.text(
+                    0.5,
+                    0.5,
+                    f"Error plotting dendrogram:\n{str(e)}",
+                    ha="center",
+                    va="center",
+                    fontsize=10,
+                    color="red",
+                )
                 ax.set_xlim(0, 1)
                 ax.set_ylim(0, 1)
-                ax.axis('off')
+                ax.axis("off")
                 print(f"Dendrogram error: {e}")
                 import traceback
+
                 traceback.print_exc()
 
         self.figure.tight_layout()
@@ -1334,23 +1359,15 @@ class ACCVisualizationWidget(QWidget):
             self,
             "Save ACC Visualization",
             "ACC_visualization.png",
-            "PNG Files (*.png);;PDF Files (*.pdf);;SVG Files (*.svg);;All Files (*)"
+            "PNG Files (*.png);;PDF Files (*.pdf);;SVG Files (*.svg);;All Files (*)",
         )
 
         if file_path:
             try:
-                self.figure.savefig(file_path, dpi=300, bbox_inches='tight')
-                QMessageBox.information(
-                    self,
-                    "Success",
-                    f"Image saved successfully to:\n{file_path}"
-                )
+                self.figure.savefig(file_path, dpi=300, bbox_inches="tight")
+                QMessageBox.information(self, "Success", f"Image saved successfully to:\n{file_path}")
             except Exception as e:
-                QMessageBox.critical(
-                    self,
-                    "Error",
-                    f"Failed to save image:\n{str(e)}"
-                )
+                QMessageBox.critical(self, "Error", f"Failed to save image:\n{str(e)}")
 
     def on_step_changed(self, value):
         """Handle slider value change"""
@@ -1423,11 +1440,10 @@ class ACCVisualizationWidget(QWidget):
         action = step_info.get("action", "unknown")
 
         if not clusters:
-            ax.text(0.5, 0.5, 'No clusters to display',
-                   ha='center', va='center', fontsize=12, color='gray')
+            ax.text(0.5, 0.5, "No clusters to display", ha="center", va="center", fontsize=12, color="gray")
             ax.set_xlim(0, 1)
             ax.set_ylim(0, 1)
-            ax.axis('off')
+            ax.axis("off")
             self.canvas.draw()
             return
 
@@ -1445,16 +1461,16 @@ class ACCVisualizationWidget(QWidget):
             max_radius = max(max_radius, radius)
 
         if not all_x:
-            ax.text(0.5, 0.5, 'No points to display',
-                   ha='center', va='center', fontsize=12, color='gray')
+            ax.text(0.5, 0.5, "No points to display", ha="center", va="center", fontsize=12, color="gray")
             ax.set_xlim(0, 1)
             ax.set_ylim(0, 1)
-            ax.axis('off')
+            ax.axis("off")
             self.canvas.draw()
             return
 
         # STEP 1: Collect all unique radii from all clusters
         import math
+
         all_radii = set()
         all_points = {}
 
@@ -1476,12 +1492,16 @@ class ACCVisualizationWidget(QWidget):
         radius_to_color = {}
         for idx, radius in enumerate(sorted_radii):
             radius_to_color[radius] = circle_colors_concentric[idx]
-            circle = plt.Circle((0, 0), radius, fill=False,
-                              edgecolor=circle_colors_concentric[idx],
-                              linewidth=2,
-                              linestyle='-',
-                              alpha=0.6,
-                              label=f"Circle r={radius:.3f}")
+            circle = plt.Circle(
+                (0, 0),
+                radius,
+                fill=False,
+                edgecolor=circle_colors_concentric[idx],
+                linewidth=2,
+                linestyle="-",
+                alpha=0.6,
+                label=f"Circle r={radius:.3f}",
+            )
             ax.add_patch(circle)
 
         # STEP 3: Plot member points
@@ -1493,20 +1513,17 @@ class ACCVisualizationWidget(QWidget):
 
             # Use different colors for highlighted vs existing members
             if member in highlighted_members:
-                color = 'red'  # Highlighted (newly added)
+                color = "red"  # Highlighted (newly added)
                 markersize = 12
-                label_color = 'red'
+                label_color = "red"
             else:
                 # Use the color of the concentric circle this point is on
                 color = radius_to_color.get(rounded_r, circle_colors_concentric[0])
                 markersize = 10
-                label_color = 'black'
+                label_color = "black"
 
-            ax.plot(x, y, 'o', markersize=markersize,
-                   color=color,
-                   markeredgecolor='black', markeredgewidth=1.5)
-            ax.text(x, y + 0.08, f'{member}', fontsize=10,
-                   ha='center', fontweight='bold', color=label_color)
+            ax.plot(x, y, "o", markersize=markersize, color=color, markeredgecolor="black", markeredgewidth=1.5)
+            ax.text(x, y + 0.08, f"{member}", fontsize=10, ha="center", fontweight="bold", color=label_color)
 
         # Set equal aspect ratio and limits
         margin = max_radius * 0.5 if max_radius > 0 else 1.0
@@ -1517,36 +1534,36 @@ class ACCVisualizationWidget(QWidget):
         center_x = (max(all_x) + min(all_x)) / 2 if len(all_x) > 1 else 0
         center_y = (max(all_y) + min(all_y)) / 2 if len(all_y) > 1 else 0
 
-        ax.set_xlim(center_x - plot_range/2, center_x + plot_range/2)
-        ax.set_ylim(center_y - plot_range/2, center_y + plot_range/2)
-        ax.set_aspect('equal')
+        ax.set_xlim(center_x - plot_range / 2, center_x + plot_range / 2)
+        ax.set_ylim(center_y - plot_range / 2, center_y + plot_range / 2)
+        ax.set_aspect("equal")
 
         # Add grid and axes
         ax.grid(True, alpha=0.3)
-        ax.axhline(y=0, color='k', linestyle='--', alpha=0.3)
-        ax.axvline(x=0, color='k', linestyle='--', alpha=0.3)
-        ax.set_xlabel('X', fontsize=10)
-        ax.set_ylabel('Y', fontsize=10)
+        ax.axhline(y=0, color="k", linestyle="--", alpha=0.3)
+        ax.axvline(x=0, color="k", linestyle="--", alpha=0.3)
+        ax.set_xlabel("X", fontsize=10)
+        ax.set_ylabel("Y", fontsize=10)
 
         # Title with step info
-        title = f'ACC Step {self.current_step}: {action}'
-        ax.set_title(title, fontsize=11, fontweight='bold')
+        title = f"ACC Step {self.current_step}: {action}"
+        ax.set_title(title, fontsize=11, fontweight="bold")
 
         # Add info text
-        info_lines = [
-            f"Active Clusters: {len(clusters)}",
-            f"Total Members: {total_members}",
-            f"Action: {action}"
-        ]
+        info_lines = [f"Active Clusters: {len(clusters)}", f"Total Members: {total_members}", f"Action: {action}"]
         if highlighted_members:
             info_lines.append(f"Added: {', '.join(sorted(highlighted_members))}")
 
-        info_text = '\n'.join(info_lines)
-        ax.text(0.02, 0.98, info_text,
-                transform=ax.transAxes,
-                fontsize=9,
-                verticalalignment='top',
-                bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.8))
+        info_text = "\n".join(info_lines)
+        ax.text(
+            0.02,
+            0.98,
+            info_text,
+            transform=ax.transAxes,
+            fontsize=9,
+            verticalalignment="top",
+            bbox=dict(boxstyle="round", facecolor="wheat", alpha=0.8),
+        )
 
         self.figure.tight_layout()
         self.canvas.draw()
@@ -1565,11 +1582,10 @@ class ACCVisualizationWidget(QWidget):
         all_members = acc_result.get("all_members", set())
 
         if len(clusters) == 0:
-            ax.text(0.5, 0.5, 'No clusters to display',
-                   ha='center', va='center', fontsize=12, color='gray')
+            ax.text(0.5, 0.5, "No clusters to display", ha="center", va="center", fontsize=12, color="gray")
             ax.set_xlim(0, 1)
             ax.set_ylim(0, 1)
-            ax.axis('off')
+            ax.axis("off")
             self.canvas.draw()
             return
 
@@ -1592,47 +1608,52 @@ class ACCVisualizationWidget(QWidget):
         circle_colors = plt.cm.rainbow(np.linspace(0, 1, len(sorted_radii)))
 
         for idx, radius in enumerate(sorted_radii):
-            circle = plt.Circle((0, 0), radius, fill=False,
-                              edgecolor=circle_colors[idx],
-                              linewidth=2,
-                              linestyle='-',
-                              alpha=0.7,
-                              label=f"Circle r={radius:.3f}")
+            circle = plt.Circle(
+                (0, 0),
+                radius,
+                fill=False,
+                edgecolor=circle_colors[idx],
+                linewidth=2,
+                linestyle="-",
+                alpha=0.7,
+                label=f"Circle r={radius:.3f}",
+            )
             ax.add_patch(circle)
 
         # STEP 3: Plot member points
         for member, (x, y, r) in all_points.items():
-            ax.plot(x, y, 'o', markersize=10,
-                   color='darkblue',
-                   markeredgecolor='black', markeredgewidth=1.5)
-            ax.text(x, y + 0.08, f'{member}', fontsize=10,
-                   ha='center', fontweight='bold')
+            ax.plot(x, y, "o", markersize=10, color="darkblue", markeredgecolor="black", markeredgewidth=1.5)
+            ax.text(x, y + 0.08, f"{member}", fontsize=10, ha="center", fontweight="bold")
 
         # Set equal aspect ratio and limits based on largest circle
-        max_radius = max(c["diameter"]/2.0 for c in clusters)
+        max_radius = max(c["diameter"] / 2.0 for c in clusters)
         margin = max_radius * 0.3
         ax.set_xlim(-max_radius - margin, max_radius + margin)
         ax.set_ylim(-max_radius - margin, max_radius + margin)
-        ax.set_aspect('equal')
+        ax.set_aspect("equal")
 
         # Add grid and axes
         ax.grid(True, alpha=0.3)
-        ax.axhline(y=0, color='k', linestyle='--', alpha=0.3)
-        ax.axvline(x=0, color='k', linestyle='--', alpha=0.3)
-        ax.set_xlabel('X', fontsize=10)
-        ax.set_ylabel('Y', fontsize=10)
-        ax.set_title('ACC Concentric Circles', fontsize=11, fontweight='bold')
+        ax.axhline(y=0, color="k", linestyle="--", alpha=0.3)
+        ax.axvline(x=0, color="k", linestyle="--", alpha=0.3)
+        ax.set_xlabel("X", fontsize=10)
+        ax.set_ylabel("Y", fontsize=10)
+        ax.set_title("ACC Concentric Circles", fontsize=11, fontweight="bold")
 
         # Add legend
-        ax.legend(loc='upper right', fontsize=8)
+        ax.legend(loc="upper right", fontsize=8)
 
         # Add info text
         info_text = f"Total members: {len(all_members)}\nClusters: {len(clusters)}"
-        ax.text(0.02, 0.98, info_text,
-                transform=ax.transAxes,
-                fontsize=9,
-                verticalalignment='top',
-                bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.8))
+        ax.text(
+            0.02,
+            0.98,
+            info_text,
+            transform=ax.transAxes,
+            fontsize=9,
+            verticalalignment="top",
+            bbox=dict(boxstyle="round", facecolor="wheat", alpha=0.8),
+        )
 
         self.figure.tight_layout()
         self.canvas.draw()
@@ -1650,8 +1671,8 @@ class ACCVisualizationWidget(QWidget):
             level_cluster_id = f"[{level['cluster1']}, {level['cluster2']}]"
             if level_cluster_id == cluster_id:
                 # Recursively get descendants from both children
-                child1_descendants = self.get_all_descendants(level['cluster1'], levels, positions)
-                child2_descendants = self.get_all_descendants(level['cluster2'], levels, positions)
+                child1_descendants = self.get_all_descendants(level["cluster1"], levels, positions)
+                child2_descendants = self.get_all_descendants(level["cluster2"], levels, positions)
                 return child1_descendants + child2_descendants
 
         return []
@@ -1659,11 +1680,12 @@ class ACCVisualizationWidget(QWidget):
     def apply_acc2_swaps(self, acc2_data, swaps):
         """Apply swaps to ACC2 data and return modified copy"""
         import copy
+
         data = copy.deepcopy(acc2_data)
 
-        positions = data['positions']
-        merge_points = data['merge_points']
-        levels = data['levels']
+        positions = data["positions"]
+        merge_points = data["merge_points"]
+        levels = data["levels"]
 
         # Apply each swap
         for level_idx, should_swap in swaps.items():
@@ -1676,22 +1698,22 @@ class ACCVisualizationWidget(QWidget):
             if cluster_id not in merge_points:
                 continue
 
-            merge_angle = merge_points[cluster_id]['angle']
+            merge_angle = merge_points[cluster_id]["angle"]
 
             # Get all descendants of both children
-            child1_areas = self.get_all_descendants(level['cluster1'], levels, positions)
-            child2_areas = self.get_all_descendants(level['cluster2'], levels, positions)
+            child1_areas = self.get_all_descendants(level["cluster1"], levels, positions)
+            child2_areas = self.get_all_descendants(level["cluster2"], levels, positions)
 
             # Mirror all descendant angles around merge_angle
             for area in child1_areas + child2_areas:
                 if area in positions:
-                    old_angle = positions[area]['angle']
+                    old_angle = positions[area]["angle"]
                     new_angle = 2 * merge_angle - old_angle
-                    positions[area]['angle'] = new_angle
+                    positions[area]["angle"] = new_angle
 
         # Recalculate merge points and lines with new positions
-        data['merge_points'] = calculate_merge_points(levels, positions)
-        data['lines'] = generate_connection_lines(levels, positions, data['merge_points'])
+        data["merge_points"] = calculate_merge_points(levels, positions)
+        data["lines"] = generate_connection_lines(levels, positions, data["merge_points"])
 
         return data
 
@@ -1701,7 +1723,7 @@ class ACCVisualizationWidget(QWidget):
         self.acc2_data = acc2_data
 
         # Initialize or keep swap state
-        if reset_swaps or not hasattr(self, 'acc2_swaps'):
+        if reset_swaps or not hasattr(self, "acc2_swaps"):
             self.acc2_swaps = {}  # {level_idx: True/False}
 
         # Apply swaps to create modified data
@@ -1709,21 +1731,21 @@ class ACCVisualizationWidget(QWidget):
 
         self.figure.clear()
         ax = self.figure.add_subplot(111)
-        ax.set_aspect('equal')
+        ax.set_aspect("equal")
         ax.grid(True, alpha=0.3)
-        ax.axhline(y=0, color='k', linewidth=0.5, alpha=0.3)
-        ax.axvline(x=0, color='k', linewidth=0.5, alpha=0.3)
+        ax.axhline(y=0, color="k", linewidth=0.5, alpha=0.3)
+        ax.axvline(x=0, color="k", linewidth=0.5, alpha=0.3)
 
-        circles = working_data['circles']
-        positions = working_data['positions']
-        merge_points = working_data['merge_points']
-        lines = working_data['lines']
-        levels = working_data['levels']
+        circles = working_data["circles"]
+        positions = working_data["positions"]
+        merge_points = working_data["merge_points"]
+        lines = working_data["lines"]
+        levels = working_data["levels"]
 
         # Create radius -> inc_sim mapping
         radius_to_sim = {}
         for level in levels:
-            radius_to_sim[level['radius']] = level['inc_sim']
+            radius_to_sim[level["radius"]] = level["inc_sim"]
 
         # Step 1: Draw all concentric circles
         circle_colors = plt.cm.rainbow(np.linspace(0, 1, len(circles)))
@@ -1736,12 +1758,16 @@ class ACCVisualizationWidget(QWidget):
                 inc_sim = radius_to_sim.get(radius, 0.0)
                 label = f"inc_sim={inc_sim:.3f}"
 
-            circle = plt.Circle((0, 0), radius, fill=False,
-                               edgecolor=circle_colors[idx],
-                               linewidth=2,
-                               linestyle='-',
-                               alpha=0.7,
-                               label=label)
+            circle = plt.Circle(
+                (0, 0),
+                radius,
+                fill=False,
+                edgecolor=circle_colors[idx],
+                linewidth=2,
+                linestyle="-",
+                alpha=0.7,
+                label=label,
+            )
             ax.add_patch(circle)
 
         # Step 2: Draw connection lines
@@ -1749,10 +1775,10 @@ class ACCVisualizationWidget(QWidget):
 
         # Draw arcs
         for line in lines:
-            if line['type'] == 'arc':
-                radius = line['radius']
-                angle_start = line['angle_start']
-                angle_end = line['angle_end']
+            if line["type"] == "arc":
+                radius = line["radius"]
+                angle_start = line["angle_start"]
+                angle_end = line["angle_end"]
 
                 # Convert to matplotlib's convention
                 mpl_angle_start = angle_start + 90
@@ -1761,44 +1787,46 @@ class ACCVisualizationWidget(QWidget):
                 if mpl_angle_start > mpl_angle_end:
                     mpl_angle_start, mpl_angle_end = mpl_angle_end, mpl_angle_start
 
-                arc = mpl_patches.Arc((0, 0), 2*radius, 2*radius,
-                                angle=0,
-                                theta1=mpl_angle_start,
-                                theta2=mpl_angle_end,
-                                color='black',
-                                linewidth=2,
-                                alpha=0.8)
+                arc = mpl_patches.Arc(
+                    (0, 0),
+                    2 * radius,
+                    2 * radius,
+                    angle=0,
+                    theta1=mpl_angle_start,
+                    theta2=mpl_angle_end,
+                    color="black",
+                    linewidth=2,
+                    alpha=0.8,
+                )
                 ax.add_patch(arc)
 
         # Draw radial lines
         for line in lines:
-            if line['type'] == 'radial':
-                r1, angle = line['from']
-                r2, _ = line['to']
+            if line["type"] == "radial":
+                r1, angle = line["from"]
+                r2, _ = line["to"]
 
                 # Convert to cartesian
                 x1, y1 = pol2cart(r1, angle)
                 x2, y2 = pol2cart(r2, angle)
 
-                ax.plot([x1, x2], [y1, y2], 'k-', linewidth=2, alpha=0.8)
+                ax.plot([x1, x2], [y1, y2], "k-", linewidth=2, alpha=0.8)
 
         # Step 3: Draw areas at r=0.5
         for area, pos in positions.items():
-            angle = pos['angle']
-            radius = pos['radius']
+            angle = pos["angle"]
+            radius = pos["radius"]
 
             # Convert to cartesian
             x, y = pol2cart(radius, angle)
 
             # Draw area point
-            ax.scatter(x, y, c='darkblue', s=200, zorder=10,
-                      edgecolors='black', linewidth=2)
+            ax.scatter(x, y, c="darkblue", s=200, zorder=10, edgecolors="black", linewidth=2)
 
             # Label area
             label_r = radius - 0.1
             label_x, label_y = pol2cart(label_r, angle)
-            ax.text(label_x, label_y, area, fontsize=14, ha='center', va='center',
-                   fontweight='bold', color='darkblue')
+            ax.text(label_x, label_y, area, fontsize=14, ha="center", va="center", fontweight="bold", color="darkblue")
 
         # Step 4: Draw merge points (small red dots) and store their info
         merge_point_data = []  # Store (x, y, angle, sub_sim, cluster_id)
@@ -1807,18 +1835,17 @@ class ACCVisualizationWidget(QWidget):
         cluster_to_subsim = {}
         for level in levels:
             cluster_id = f"[{level['cluster1']}, {level['cluster2']}]"
-            cluster_to_subsim[cluster_id] = level['sub_sim']
+            cluster_to_subsim[cluster_id] = level["sub_sim"]
 
         for cluster_id, mp in merge_points.items():
-            angle = mp['angle']
-            radius = mp['radius']
+            angle = mp["angle"]
+            radius = mp["radius"]
 
             # Convert to cartesian
             x, y = pol2cart(radius, angle)
 
             # Draw merge point
-            ax.scatter(x, y, c='red', s=50, zorder=9,
-                      edgecolors='black', linewidth=1, alpha=0.6)
+            ax.scatter(x, y, c="red", s=50, zorder=9, edgecolors="black", linewidth=1, alpha=0.6)
 
             # Store merge point data for hover
             sub_sim = cluster_to_subsim.get(cluster_id, 0.0)
@@ -1831,36 +1858,44 @@ class ACCVisualizationWidget(QWidget):
         ax.set_ylim(-lim, lim)
 
         # Add title
-        ax.set_title('ACC2: Dendrogram on Concentric Circles', fontsize=12, fontweight='bold')
+        ax.set_title("ACC2: Dendrogram on Concentric Circles", fontsize=12, fontweight="bold")
 
         # Add info text
         info_lines = [
             f"Total areas: {len(positions)}",
             f"Merge levels: {len(levels)}",
             f"Circles: {len(circles)}",
-            f"All areas at r={circles[0]:.1f}"
+            f"All areas at r={circles[0]:.1f}",
         ]
-        info_text = '\n'.join(info_lines)
-        ax.text(0.02, 0.98, info_text,
-               transform=ax.transAxes,
-               fontsize=10,
-               verticalalignment='top',
-               bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.8))
+        info_text = "\n".join(info_lines)
+        ax.text(
+            0.02,
+            0.98,
+            info_text,
+            transform=ax.transAxes,
+            fontsize=10,
+            verticalalignment="top",
+            bbox=dict(boxstyle="round", facecolor="wheat", alpha=0.8),
+        )
 
         # Add legend (limit to first few circles)
         handles, labels = ax.get_legend_handles_labels()
         if len(handles) > 8:
             handles = handles[:4] + handles[-4:]
             labels = labels[:4] + labels[-4:]
-        ax.legend(handles, labels, loc='upper right', fontsize=8, ncol=2)
+        ax.legend(handles, labels, loc="upper right", fontsize=8, ncol=2)
 
         # Add interactive hover annotation for merge points
-        annot = ax.annotate("", xy=(0, 0), xytext=(10, 10),
-                           textcoords="offset points",
-                           bbox=dict(boxstyle="round", fc="yellow", alpha=0.9),
-                           fontsize=9,
-                           visible=False,
-                           zorder=100)
+        annot = ax.annotate(
+            "",
+            xy=(0, 0),
+            xytext=(10, 10),
+            textcoords="offset points",
+            bbox=dict(boxstyle="round", fc="yellow", alpha=0.9),
+            fontsize=9,
+            visible=False,
+            zorder=100,
+        )
 
         def on_hover(event):
             """Handle mouse hover events"""
@@ -1874,11 +1909,11 @@ class ACCVisualizationWidget(QWidget):
                 return
 
             # Find closest merge point
-            min_dist = float('inf')
+            min_dist = float("inf")
             closest_point = None
 
             for x, y, angle, sub_sim, cluster_id in merge_point_data:
-                dist = ((event.xdata - x)**2 + (event.ydata - y)**2)**0.5
+                dist = ((event.xdata - x) ** 2 + (event.ydata - y) ** 2) ** 0.5
                 if dist < min_dist:
                     min_dist = dist
                     closest_point = (x, y, angle, sub_sim, cluster_id)
@@ -1897,7 +1932,7 @@ class ACCVisualizationWidget(QWidget):
             self.canvas.draw_idle()
 
         # Connect hover event
-        self.canvas.mpl_connect('motion_notify_event', on_hover)
+        self.canvas.mpl_connect("motion_notify_event", on_hover)
 
         def on_click(event):
             """Handle mouse click events"""
@@ -1909,12 +1944,12 @@ class ACCVisualizationWidget(QWidget):
                 return
 
             # Find closest merge point
-            min_dist = float('inf')
+            min_dist = float("inf")
             closest_point = None
             closest_level_idx = None
 
             for x, y, angle, sub_sim, cluster_id in merge_point_data:
-                dist = ((event.xdata - x)**2 + (event.ydata - y)**2)**0.5
+                dist = ((event.xdata - x) ** 2 + (event.ydata - y) ** 2) ** 0.5
                 if dist < min_dist:
                     min_dist = dist
                     closest_point = (x, y, angle, sub_sim, cluster_id)
@@ -1942,7 +1977,7 @@ class ACCVisualizationWidget(QWidget):
                 self.info_label.setStyleSheet("color: blue; font-size: 10px;")
 
         # Connect click event
-        self.canvas.mpl_connect('button_press_event', on_click)
+        self.canvas.mpl_connect("button_press_event", on_click)
 
         self.figure.tight_layout()
         self.canvas.draw()
@@ -2039,10 +2074,10 @@ class LeftPanel(ColumnPanel):
         main_window = self.window()
         if isinstance(main_window, MainWindow):
             # Update only the dendrogram for the loaded matrix
-            if matrix_type == 'Subordinate':
-                main_window.update_dendrogram('subordinate')
-            elif matrix_type == 'Inclusive':
-                main_window.update_dendrogram('inclusive')
+            if matrix_type == "Subordinate":
+                main_window.update_dendrogram("subordinate")
+            elif matrix_type == "Inclusive":
+                main_window.update_dendrogram("inclusive")
 
     def on_step_changed(self):
         """Called when step changes"""
@@ -2077,7 +2112,7 @@ class LeftPanel(ColumnPanel):
                         self,
                         "Label Mismatch",
                         "Subordinate and Inclusive matrices have different labels.\n"
-                        "Please reload the matrices to ensure consistency."
+                        "Please reload the matrices to ensure consistency.",
                     )
                     return
 
@@ -2092,7 +2127,7 @@ class LeftPanel(ColumnPanel):
                     self,
                     "Incomplete Data",
                     "Only one matrix is loaded. Please load both matrices or start from scratch.\n\n"
-                    "To start from scratch, close both matrices and use Edit Area List."
+                    "To start from scratch, close both matrices and use Edit Area List.",
                 )
                 return
 
@@ -2129,17 +2164,14 @@ class LeftPanel(ColumnPanel):
                         "Success",
                         f"Area list {'created' if not sub_loaded and not inc_loaded else 'updated'} successfully!\n\n"
                         f"Total areas: {len(result['labels'])}\n"
-                        f"Matrix size: {result['sub_matrix'].shape[0]}×{result['sub_matrix'].shape[1]}"
+                        f"Matrix size: {result['sub_matrix'].shape[0]}×{result['sub_matrix'].shape[1]}",
                     )
         except Exception as e:
             print(f"Error in edit_area_list: {e}")  # Debug
             import traceback
+
             traceback.print_exc()
-            QMessageBox.critical(
-                self,
-                "Error",
-                f"An error occurred while opening the Area List Editor:\n{str(e)}"
-            )
+            QMessageBox.critical(self, "Error", f"An error occurred while opening the Area List Editor:\n{str(e)}")
 
 
 class CenterPanel(ColumnPanel):
@@ -2313,34 +2345,30 @@ class MainWindow(QMainWindow):
         # Set central widget
         self.setCentralWidget(splitter)
 
-    def update_dendrogram(self, which='both'):
+    def update_dendrogram(self, which="both"):
         """
         Update specific dendrogram(s)
 
         Args:
             which: 'subordinate', 'inclusive', or 'both'
         """
-        if which in ('subordinate', 'both'):
+        if which in ("subordinate", "both"):
             # Update subordinate dendrogram
             sub_step_mgr = self.left_panel.sub_matrix_widget.get_step_manager()
             if sub_step_mgr:
                 self.center_panel.sub_dendro_widget.set_step_manager(sub_step_mgr)
-                self.center_panel.sub_dendro_widget.set_step(
-                    self.left_panel.sub_matrix_widget.get_current_step()
-                )
+                self.center_panel.sub_dendro_widget.set_step(self.left_panel.sub_matrix_widget.get_current_step())
 
-        if which in ('inclusive', 'both'):
+        if which in ("inclusive", "both"):
             # Update inclusive dendrogram
             inc_step_mgr = self.left_panel.inc_matrix_widget.get_step_manager()
             if inc_step_mgr:
                 self.center_panel.inc_dendro_widget.set_step_manager(inc_step_mgr)
-                self.center_panel.inc_dendro_widget.set_step(
-                    self.left_panel.inc_matrix_widget.get_current_step()
-                )
+                self.center_panel.inc_dendro_widget.set_step(self.left_panel.inc_matrix_widget.get_current_step())
 
     def update_dendrograms(self):
         """Update both dendrograms (for backward compatibility)"""
-        self.update_dendrogram('both')
+        self.update_dendrogram("both")
 
     def update_dendrogram_steps(self):
         """Update dendrogram display when step changes"""
@@ -2357,19 +2385,11 @@ class MainWindow(QMainWindow):
         try:
             # Check if both matrices are loaded
             if not self.left_panel.sub_matrix_widget.is_loaded():
-                QMessageBox.warning(
-                    self,
-                    "Missing Data",
-                    "Please load the Subordinate Similarity Matrix first"
-                )
+                QMessageBox.warning(self, "Missing Data", "Please load the Subordinate Similarity Matrix first")
                 return
 
             if not self.left_panel.inc_matrix_widget.is_loaded():
-                QMessageBox.warning(
-                    self,
-                    "Missing Data",
-                    "Please load the Inclusive Similarity Matrix first"
-                )
+                QMessageBox.warning(self, "Missing Data", "Please load the Inclusive Similarity Matrix first")
                 return
 
             # Get original matrices (not step matrices)
@@ -2382,38 +2402,30 @@ class MainWindow(QMainWindow):
             # Validate matrices
             valid, msg = validate_similarity_matrix(sub_matrix)
             if not valid:
-                QMessageBox.warning(
-                    self,
-                    "Invalid Subordinate Matrix",
-                    f"Subordinate matrix validation failed:\n{msg}"
-                )
+                QMessageBox.warning(self, "Invalid Subordinate Matrix", f"Subordinate matrix validation failed:\n{msg}")
                 return
 
             valid, msg = validate_similarity_matrix(inc_matrix)
             if not valid:
-                QMessageBox.warning(
-                    self,
-                    "Invalid Inclusive Matrix",
-                    f"Inclusive matrix validation failed:\n{msg}"
-                )
+                QMessageBox.warning(self, "Invalid Inclusive Matrix", f"Inclusive matrix validation failed:\n{msg}")
                 return
 
             # Setup log capture
             log_stream = StringIO()
             log_handler = logging.StreamHandler(log_stream)
             log_handler.setLevel(logging.INFO)
-            log_formatter = logging.Formatter('%(levelname)s: %(message)s')
+            log_formatter = logging.Formatter("%(levelname)s: %(message)s")
             log_handler.setFormatter(log_formatter)
 
             # Get logger from acc_core_new (logger name is 'ACC_Iterative')
-            logger = logging.getLogger('ACC_Iterative')
+            logger = logging.getLogger("ACC_Iterative")
             original_level = logger.level
             logger.setLevel(logging.INFO)
             logger.addHandler(log_handler)
 
             try:
                 # Run ACC algorithm step by step (NEW ITERATIVE ALGORITHM)
-                acc_steps = build_acc_from_matrices_iterative(sub_matrix, inc_matrix, unit=1.0, method='average')
+                acc_steps = build_acc_from_matrices_iterative(sub_matrix, inc_matrix, unit=1.0, method="average")
             finally:
                 # Remove handler and restore logger
                 logger.removeHandler(log_handler)
@@ -2451,28 +2463,17 @@ class MainWindow(QMainWindow):
                         f"Total members: {len(members)}\n"
                         f"Final diameter: {diameter:.3f}\n"
                         f"Final angle: {theta:.2f}°\n\n"
-                        f"Use slider to navigate through steps"
+                        f"Use slider to navigate through steps",
                     )
                 else:
-                    QMessageBox.warning(
-                        self,
-                        "Warning",
-                        "ACC generation completed but no clusters found"
-                    )
+                    QMessageBox.warning(self, "Warning", "ACC generation completed but no clusters found")
             else:
-                QMessageBox.warning(
-                    self,
-                    "No Steps",
-                    "No ACC steps were generated. Check your data."
-                )
+                QMessageBox.warning(self, "No Steps", "No ACC steps were generated. Check your data.")
 
         except Exception as e:
-            QMessageBox.critical(
-                self,
-                "Error",
-                f"Failed to generate visualization:\n{str(e)}"
-            )
+            QMessageBox.critical(self, "Error", f"Failed to generate visualization:\n{str(e)}")
             import traceback
+
             traceback.print_exc()
 
     def generate_acc2(self):
@@ -2480,19 +2481,11 @@ class MainWindow(QMainWindow):
         try:
             # Check if both matrices are loaded
             if not self.left_panel.sub_matrix_widget.is_loaded():
-                QMessageBox.warning(
-                    self,
-                    "Missing Data",
-                    "Please load the Subordinate Similarity Matrix first"
-                )
+                QMessageBox.warning(self, "Missing Data", "Please load the Subordinate Similarity Matrix first")
                 return
 
             if not self.left_panel.inc_matrix_widget.is_loaded():
-                QMessageBox.warning(
-                    self,
-                    "Missing Data",
-                    "Please load the Inclusive Similarity Matrix first"
-                )
+                QMessageBox.warning(self, "Missing Data", "Please load the Inclusive Similarity Matrix first")
                 return
 
             # Get original matrices (not step matrices)
@@ -2505,20 +2498,12 @@ class MainWindow(QMainWindow):
             # Validate matrices
             valid, msg = validate_similarity_matrix(sub_matrix)
             if not valid:
-                QMessageBox.warning(
-                    self,
-                    "Invalid Subordinate Matrix",
-                    f"Subordinate matrix validation failed:\n{msg}"
-                )
+                QMessageBox.warning(self, "Invalid Subordinate Matrix", f"Subordinate matrix validation failed:\n{msg}")
                 return
 
             valid, msg = validate_similarity_matrix(inc_matrix)
             if not valid:
-                QMessageBox.warning(
-                    self,
-                    "Invalid Inclusive Matrix",
-                    f"Inclusive matrix validation failed:\n{msg}"
-                )
+                QMessageBox.warning(self, "Invalid Inclusive Matrix", f"Inclusive matrix validation failed:\n{msg}")
                 return
 
             # Build ACC2
@@ -2539,25 +2524,20 @@ class MainWindow(QMainWindow):
                 f"Features:\n"
                 f"- Circle size: diameter = 1 + (1 - similarity)\n"
                 f"- Dendrogram mapped onto concentric circles\n"
-                f"- Explicit hierarchy lines (radial + arcs)"
+                f"- Explicit hierarchy lines (radial + arcs)",
             )
 
         except Exception as e:
-            QMessageBox.critical(
-                self,
-                "Error",
-                f"Failed to generate ACC2 visualization:\n{str(e)}"
-            )
+            QMessageBox.critical(self, "Error", f"Failed to generate ACC2 visualization:\n{str(e)}")
             import traceback
+
             traceback.print_exc()
 
     def show_acc_log(self):
         """Show ACC generation log in a dialog"""
         if not self.acc_log:
             QMessageBox.information(
-                self,
-                "No Log Available",
-                "No ACC generation log is available.\nPlease generate ACC first."
+                self, "No Log Available", "No ACC generation log is available.\nPlease generate ACC first."
             )
             return
 
@@ -2570,13 +2550,14 @@ def main():
     """Main entry point"""
     try:
         app = QApplication(sys.argv)
-        app.setStyle('Fusion')
+        app.setStyle("Fusion")
         window = MainWindow()
         window.show()
         sys.exit(app.exec_())
     except Exception as e:
         print(f"ERROR in main(): {e}")
         import traceback
+
         traceback.print_exc()
         sys.exit(1)
 
