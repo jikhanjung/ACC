@@ -31,13 +31,15 @@ jobs:
         sudo apt-get update
         sudo apt-get install -y pandoc
 
-    - name: Install LaTeX
+    - name: Install XeLaTeX and fonts
       run: |
         sudo apt-get install -y \
+          texlive-xetex \
           texlive-latex-base \
           texlive-fonts-recommended \
           texlive-fonts-extra \
-          texlive-latex-extra
+          texlive-latex-extra \
+          fonts-noto-cjk
 
     - name: Install Python dependencies
       run: |
@@ -48,7 +50,7 @@ jobs:
         python scripts/generate_pdf.py \
           --input doc/USER_MANUAL.md \
           --output doc/ACC_USER_MANUAL.pdf \
-          --engine pdflatex
+          --engine xelatex
 
     - name: Check generated PDF
       run: |

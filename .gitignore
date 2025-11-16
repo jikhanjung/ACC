@@ -170,3 +170,5 @@ build_linux/
 *.dmg
 *.AppImage
 *.zip
+*.deb
+*.rpm

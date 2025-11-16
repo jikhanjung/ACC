@@ -44,7 +44,7 @@ def ensure_pandoc_installed():
             sys.exit(1)
 
 
-def generate_pdf(input_file: str, output_file: str, engine: str = "pdflatex"):
+def generate_pdf(input_file: str, output_file: str, engine: str = "xelatex"):
     """
     Generate PDF from Markdown file.
 
@@ -63,8 +63,13 @@ def generate_pdf(input_file: str, output_file: str, engine: str = "pdflatex"):
     # Ensure output directory exists
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
+    # Change working directory to doc/ to resolve relative image paths
+    original_cwd = Path.cwd()
+    doc_dir = input_path.parent
+
     print(f"Converting {input_file} to PDF...")
     print(f"Engine: {engine}")
+    print(f"Working directory: {doc_dir}")
 
     # Extra arguments for better PDF formatting
     extra_args = [
@@ -81,17 +86,48 @@ def generate_pdf(input_file: str, output_file: str, engine: str = "pdflatex"):
     ]
 
     if engine == "pdflatex" or engine == "xelatex":
-        extra_args.extend([
-            f"--pdf-engine={engine}",
-            "-V",
-            "mainfont=DejaVu Sans",  # Main font
-            "-V",
-            "monofont=DejaVu Sans Mono",  # Code font
-        ])
+        extra_args.append(f"--pdf-engine={engine}")
+
+        # XeLaTeX is required for Korean/Unicode support
+        if engine == "xelatex":
+            import platform
+
+            system = platform.system()
+            if system == "Windows":
+                # Windows: Use Malgun Gothic (맑은 고딕)
+                korean_font = "Malgun Gothic"
+            elif system == "Darwin":
+                # macOS: Use AppleGothic or other system font
+                korean_font = "AppleGothic"
+            else:
+                # Linux: Use Noto Sans CJK KR
+                korean_font = "Noto Sans CJK KR"
+
+            extra_args.extend([
+                "-V",
+                f"CJKmainfont={korean_font}",
+                "-V",
+                f"mainfont={korean_font}",
+            ])
+        else:
+            extra_args.extend([
+                "-V",
+                "mainfont=DejaVu Sans",  # Main font
+                "-V",
+                "monofont=DejaVu Sans Mono",  # Code font
+            ])
 
     try:
-        # Convert to PDF
-        pypandoc.convert_file(str(input_path), "pdf", outputfile=str(output_path), extra_args=extra_args)
+        # Change to doc directory to resolve relative image paths
+        import os
+
+        os.chdir(doc_dir)
+
+        # Convert to PDF using relative paths
+        pypandoc.convert_file(str(input_path.name), "pdf", outputfile=str(output_path.resolve()), extra_args=extra_args)
+
+        # Restore original working directory
+        os.chdir(original_cwd)
 
         print(f"✓ PDF generated successfully: {output_file}")
 
@@ -100,6 +136,10 @@ def generate_pdf(input_file: str, output_file: str, engine: str = "pdflatex"):
         print(f"  File size: {size_mb:.2f} MB")
 
     except RuntimeError as e:
+        # Restore original working directory
+        import os
+
+        os.chdir(original_cwd)
         print(f"Error generating PDF: {e}")
         print("\nTroubleshooting:")
         print("1. Make sure pandoc is installed: pandoc --version")
@@ -124,8 +164,8 @@ def main():
     parser.add_argument(
         "--engine",
         choices=["pdflatex", "xelatex", "wkhtmltopdf"],
-        default="pdflatex",
-        help="PDF engine to use (default: pdflatex)",
+        default="xelatex",
+        help="PDF engine to use (default: xelatex for Korean support)",
     )
 
     args = parser.parse_args()

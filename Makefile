@@ -52,7 +52,7 @@ pre-commit:
 
 pdf:
 	@echo "Generating PDF from USER_MANUAL.md..."
-	python scripts/generate_pdf.py
+	python scripts/generate_pdf.py --engine xelatex
 
 sphinx:
 	@echo "Building Sphinx documentation..."

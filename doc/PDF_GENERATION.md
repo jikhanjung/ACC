@@ -26,6 +26,7 @@ make docs
 ### 방법 2: Python 스크립트 직접 실행
 
 ```bash
+# 기본 실행 (xelatex 엔진 사용 - 한글 지원)
 python scripts/generate_pdf.py
 ```
 
@@ -34,7 +35,7 @@ python scripts/generate_pdf.py
 python scripts/generate_pdf.py \
   --input doc/USER_MANUAL.md \
   --output doc/ACC_USER_MANUAL.pdf \
-  --engine pdflatex
+  --engine xelatex
 ```
 
 ## 필수 요구사항
@@ -59,28 +60,32 @@ python -c "import pypandoc; pypandoc.download_pandoc()"
 
 ### 3. LaTeX 설치 (PDF 엔진)
 
-PDF 생성을 위해 LaTeX이 필요합니다:
+PDF 생성을 위해 XeLaTeX이 포함된 LaTeX이 필요합니다 (한글 지원):
 
 **Windows**:
 ```bash
 # MiKTeX 설치 (권장)
 # https://miktex.org/download
+# XeLaTeX 포함, 한글 폰트 "Malgun Gothic" 필요
 ```
 
 **macOS**:
 ```bash
 brew install --cask mactex-no-gui
 # 또는 전체 버전: brew install --cask mactex
+# XeLaTeX 자동 포함
 ```
 
 **Linux (Ubuntu/Debian)**:
 ```bash
 sudo apt-get update
 sudo apt-get install -y \
+  texlive-xetex \
   texlive-latex-base \
   texlive-fonts-recommended \
   texlive-fonts-extra \
-  texlive-latex-extra
+  texlive-latex-extra \
+  fonts-noto-cjk
 ```
 
 ## 스크립트 옵션
@@ -102,15 +107,17 @@ python scripts/generate_pdf.py \
 ### PDF 엔진 선택
 
 ```bash
-# pdflatex (기본값, 권장)
-python scripts/generate_pdf.py --engine pdflatex
-
-# xelatex (유니코드 지원 향상)
+# xelatex (기본값, 한글 지원 권장)
 python scripts/generate_pdf.py --engine xelatex
 
-# wkhtmltopdf (HTML 기반)
+# pdflatex (영문 전용)
+python scripts/generate_pdf.py --engine pdflatex
+
+# wkhtmltopdf (HTML 기반, 대안)
 python scripts/generate_pdf.py --engine wkhtmltopdf
 ```
+
+**주의**: 한글 문서는 반드시 `xelatex` 엔진을 사용해야 합니다.
 
 ## PDF 생성 기능
 
@@ -206,11 +213,12 @@ brew install --cask mactex
 **문제**: 상대 경로 이미지가 보이지 않음
 
 **해결**:
-- 스크립트가 프로젝트 루트에서 실행되는지 확인
-- 이미지 경로가 `doc/images/`에서 시작하는지 확인
+스크립트는 자동으로 `doc/` 디렉토리로 이동하여 상대 경로를 처리합니다.
+USER_MANUAL.md에서 이미지 경로는 다음과 같이 작성해야 합니다:
 
 ```markdown
 ✅ 올바름: ![설명](images/screenshot.png)
+❌ 잘못됨: ![설명](doc/images/screenshot.png)
 ❌ 잘못됨: ![설명](../images/screenshot.png)
 ```
 
@@ -220,11 +228,25 @@ brew install --cask mactex
 
 **해결**:
 ```bash
-# xelatex 엔진 사용 (유니코드 지원)
+# 1. XeLaTeX 엔진 사용 (기본값)
 python scripts/generate_pdf.py --engine xelatex
 
-# 또는 스크립트에서 폰트 설정 변경:
-# -V mainfont="Noto Sans KR"
+# 2. Windows: Malgun Gothic 폰트 확인
+# 제어판 > 글꼴에서 "맑은 고딕" 설치 확인
+
+# 3. Linux: Noto CJK 폰트 설치
+sudo apt-get install fonts-noto-cjk
+
+# 4. macOS: 시스템 한글 폰트 자동 사용
+```
+
+스크립트의 폰트 설정 (`scripts/generate_pdf.py`):
+```python
+# Windows: Malgun Gothic (맑은 고딕)
+"-V", "CJKmainfont=Malgun Gothic"
+
+# Linux/macOS에서 다른 폰트 사용 시 수정:
+# "-V", "CJKmainfont=Noto Sans CJK KR"
 ```
 
 ## 대안 방법
