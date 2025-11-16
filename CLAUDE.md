@@ -99,3 +99,13 @@ The algorithm can be extended for:
 - Performance optimization with NumPy for large datasets
 - Interactive visualizations for exploring cluster relationships
 - Application to phylogenetic, geographic, or ecological data
+
+## Documentation
+
+For more detailed information, refer to:
+- **Algorithm Details**: [doc/ACC_Algorithm_Overview.md](doc/ACC_Algorithm_Overview.md)
+- **User Manual**: [doc/USER_MANUAL.md](doc/USER_MANUAL.md)
+- **Development Guide**: [doc/development.md](doc/development.md)
+- **Build Instructions**: [doc/build/BUILDING.md](doc/build/BUILDING.md)
+- **QA Setup**: [doc/QA_SETUP_SUMMARY.md](doc/QA_SETUP_SUMMARY.md)
+- **Sphinx Documentation**: [docs/](docs/) - HTML documentation (use `make html` in docs/)

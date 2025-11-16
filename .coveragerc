@@ -1,0 +1,83 @@
+# Coverage configuration for ACC (Adaptive Cluster Circle)
+# Based on Modan2 project coverage setup
+
+[run]
+source = .
+omit =
+    # Test files
+    */tests/*
+    */test_*.py
+
+    # Build and distribution
+    */build/*
+    */dist/*
+    */packaging/*
+    */InnoSetup/*
+
+    # Virtual environments
+    */venv/*
+    */.venv/*
+    */env/*
+
+    # Cache and temporary files
+    */__pycache__/*
+    */.pytest_cache/*
+    */htmlcov/*
+    */.coverage*
+
+    # Documentation
+    */docs/*
+
+    # Configuration and metadata
+    */.github/*
+    */.git/*
+    */scripts/*
+
+    # Development logs
+    */devlog/*
+
+    # Examples (optional - comment out if you want to measure example coverage)
+    */examples/*
+
+    # Version file (auto-generated)
+    version.py
+
+[report]
+# Exclude lines with these patterns from coverage report
+exclude_lines =
+    # Standard pragma
+    pragma: no cover
+
+    # Don't complain about missing debug-only code
+    def __repr__
+    if self\.debug
+
+    # Don't complain if tests don't hit defensive assertion code
+    raise AssertionError
+    raise NotImplementedError
+
+    # Don't complain if non-runnable code isn't run
+    if 0:
+    if False:
+    if __name__ == .__main__.:
+
+    # Don't complain about abstract methods
+    @(abc\.)?abstractmethod
+
+    # Type checking blocks
+    if TYPE_CHECKING:
+
+    # Debug blocks
+    if DEBUG:
+
+# Output settings
+precision = 2
+show_missing = True
+skip_empty = True
+ignore_errors = True
+
+[html]
+directory = htmlcov
+
+[xml]
+output = coverage.xml

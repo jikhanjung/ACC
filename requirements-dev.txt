@@ -1,5 +1,18 @@
-# Development and testing requirements
-pytest>=7.4.0
-pytest-qt>=4.2.0
-pytest-cov>=4.1.0
-pytest-mock>=3.11.0
+# Development and Testing Requirements for ACC
+# Based on Modan2 project CI/CD setup
+
+# Core Testing Framework
+pytest>=8.4.0,<9.0              # Testing framework
+pytest-cov>=7.0.0,<8.0          # Coverage measurement
+pytest-qt>=4.5.0,<5.0           # PyQt5 GUI testing support
+pytest-mock>=3.14.0,<4.0        # Enhanced mocking capabilities
+pytest-timeout>=2.3.0,<3.0      # Test timeout management
+coverage[toml]>=7.10.0,<8.0     # Coverage with TOML config support
+
+# Code Quality Tools
+ruff>=0.13.0                    # Fast Python linter and formatter
+pre-commit>=4.0.0               # Pre-commit hook management
+
+# Optional: Enable when adding type hints
+# mypy>=1.11.0                  # Static type checker
+# types-all                     # Type stubs for common libraries

@@ -1,0 +1,85 @@
+name: Generate Documentation
+
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - 'doc/USER_MANUAL.md'
+      - 'doc/images/**'
+      - '.github/workflows/generate_docs.yml'
+  pull_request:
+    branches: [ main ]
+    paths:
+      - 'doc/USER_MANUAL.md'
+      - 'doc/images/**'
+  workflow_dispatch:
+
+jobs:
+  generate-pdf:
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.11'
+
+    - name: Install pandoc
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y pandoc
+
+    - name: Install LaTeX
+      run: |
+        sudo apt-get install -y \
+          texlive-latex-base \
+          texlive-fonts-recommended \
+          texlive-fonts-extra \
+          texlive-latex-extra
+
+    - name: Install Python dependencies
+      run: |
+        pip install pypandoc
+
+    - name: Generate PDF from USER_MANUAL.md
+      run: |
+        python scripts/generate_pdf.py \
+          --input doc/USER_MANUAL.md \
+          --output doc/ACC_USER_MANUAL.pdf \
+          --engine pdflatex
+
+    - name: Check generated PDF
+      run: |
+        ls -lh doc/ACC_USER_MANUAL.pdf
+        file doc/ACC_USER_MANUAL.pdf
+
+    - name: Upload PDF as artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: user-manual-pdf
+        path: doc/ACC_USER_MANUAL.pdf
+        retention-days: 30
+
+    - name: Commit PDF if changed (main branch only)
+      if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+      run: |
+        git config --local user.email "github-actions[bot]@users.noreply.github.com"
+        git config --local user.name "github-actions[bot]"
+
+        if [ -f doc/ACC_USER_MANUAL.pdf ]; then
+          git add doc/ACC_USER_MANUAL.pdf
+
+          if git diff --staged --quiet; then
+            echo "No changes to PDF"
+          else
+            git commit -m "docs: auto-generate USER_MANUAL PDF [skip ci]
+
+            🤖 Generated with GitHub Actions
+
+            Co-Authored-By: github-actions[bot] <github-actions[bot]@users.noreply.github.com>"
+            git push
+          fi
+        fi
+      continue-on-error: true

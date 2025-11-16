@@ -1,9 +1,0 @@
-# Tested and working configuration for PyInstaller build (PyQt5 version)
-# Python 3.11 + NumPy 2.x + matplotlib 3.9+
-PyQt5==5.15.9
-PyQt5-sip==12.12.2
-matplotlib>=3.9.0
-scipy>=1.11.0
-pandas>=2.0.0
-numpy>=2.0.0
-pyinstaller>=5.13.0

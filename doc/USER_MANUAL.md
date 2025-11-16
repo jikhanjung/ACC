@@ -444,7 +444,7 @@ Dendrogram과 ACC 시각화를 이미지 파일로 저장할 수 있습니다.
 
 - **Subordinate Dendrogram**: `Subordinate_dendrogram.png`
 - **Inclusive Dendrogram**: `Inclusive_dendrogram.png`
-- **ACC Visualization**: `ACC_visualization.png`
+- **ACC Visualization**: `examples/ACC_visualization.png`
 
 파일명은 저장 시 자유롭게 변경 가능합니다.
 

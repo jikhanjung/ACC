@@ -1,0 +1,85 @@
+# Pre-commit hooks for ACC (Adaptive Cluster Circle)
+# Based on Modan2 project pre-commit setup
+#
+# Installation:
+#   pip install pre-commit
+#   pre-commit install
+#
+# Run manually:
+#   pre-commit run --all-files
+#
+# Update hooks:
+#   pre-commit autoupdate
+
+repos:
+  # Ruff - Fast Python linter and formatter (replaces black, isort, flake8, etc.)
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.13.3
+    hooks:
+      # Linter with auto-fix
+      - id: ruff
+        args: [--fix, --exit-non-zero-on-fix]
+      # Formatter (replaces black)
+      - id: ruff-format
+
+  # Pre-commit hooks for general file checks
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      # Prevent large files from being committed
+      - id: check-added-large-files
+        args: ['--maxkb=1024']
+      # Check YAML syntax
+      - id: check-yaml
+        exclude: ^\.github/workflows/  # GitHub Actions YAML can be more flexible
+      # Check JSON syntax
+      - id: check-json
+      # Prevent case conflicts in filenames
+      - id: check-case-conflict
+      # Detect merge conflict markers
+      - id: check-merge-conflict
+      # Ensure files end with newline
+      - id: end-of-file-fixer
+        exclude: '.*\.(png|jpg|jpeg|gif|ico|svg|pdf|ttf|woff|woff2|eot)$'
+      # Remove trailing whitespace
+      - id: trailing-whitespace
+        exclude: '.*\.(png|jpg|jpeg|gif|ico|svg|pdf|ttf|woff|woff2|eot|md)$'
+        args: [--markdown-linebreak-ext=md]
+
+  # Type checking with MyPy (optional - enable when adding type hints)
+  # - repo: https://github.com/pre-commit/mirrors-mypy
+  #   rev: v1.11.2
+  #   hooks:
+  #     - id: mypy
+  #       additional_dependencies: [types-all]
+  #       args: [--ignore-missing-imports, --no-strict-optional]
+
+# Exclude patterns
+exclude: |
+  (?x)(
+    ^build/|
+    ^dist/|
+    ^\.pytest_cache/|
+    ^htmlcov/|
+    ^\.coverage|
+    ^__pycache__/|
+    ^\.git/|
+    ^\.github/|
+    ^packaging/|
+    ^InnoSetup/|
+    ^devlog/|
+    ^examples/.*\.png$|
+    ^images/|
+    .*\.qm$|
+    .*\.spec$|
+    .*\.bat$|
+    .*\.exe$|
+    .*\.dmg$|
+    .*\.AppImage$
+  )
+
+# Global settings
+default_language_version:
+  python: python3.12
+
+fail_fast: false
