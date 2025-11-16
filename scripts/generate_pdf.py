@@ -130,10 +130,13 @@ def generate_pdf(input_file: str, output_file: str, engine: str = "xelatex"):
         # Change to doc directory to resolve relative image paths
         import os
 
+        # Resolve output path before changing directory
+        resolved_output = output_path.resolve()
+
         os.chdir(doc_dir)
 
         # Convert to PDF using relative paths
-        pypandoc.convert_file(str(input_path.name), "pdf", outputfile=str(output_path.resolve()), extra_args=extra_args)
+        pypandoc.convert_file(str(input_path.name), "pdf", outputfile=str(resolved_output), extra_args=extra_args)
 
         # Restore original working directory
         os.chdir(original_cwd)

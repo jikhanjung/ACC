@@ -1,6 +1,18 @@
 % LaTeX header for image handling
 \usepackage{caption}
 \usepackage{float}
+\usepackage{fontspec}
+\usepackage{newunicodechar}
+
+% Fallback font for Unicode symbols (emoji, special characters)
+\newfontfamily{\fallbackfont}{DejaVu Sans}[Scale=MatchLowercase]
+\DeclareTextFontCommand{\textfallback}{\fallbackfont}
+
+% Define missing Unicode characters with fallback font
+\newunicodechar{⏮}{\textfallback{⏮}}
+\newunicodechar{⏭}{\textfallback{⏭}}
+\newunicodechar{❌}{\textfallback{❌}}
+\newunicodechar{∙}{\textfallback{∙}}
 
 % Change "Figure" to "그림" (Korean)
 \renewcommand{\figurename}{그림}
