@@ -138,7 +138,6 @@ python acc_gui.py
 
 ---
 
-**[IMAGE 1: 메인 화면]**
 ![메인 화면](images/01_main_window.png)
 
 ---
@@ -167,12 +166,10 @@ python acc_gui.py
 
 ---
 
-**[IMAGE 2: 샘플 데이터 로드 완료]**
 ![샘플 데이터 로드 완료](images/02_sample_loaded.png)
 
 ---
 
-**[IMAGE 3: ACC 생성 완료]**
 ![ACC 생성 완료](images/03_acc_generated.png)
 
 ---
@@ -272,7 +269,6 @@ N   [회색][회색][회색][회색]
 
 ---
 
-**[IMAGE 4: Matrix 편집]**
 ![Matrix 편집](images/04_matrix_editing.png)
 
 ---
@@ -309,7 +305,6 @@ N   [회색][회색][회색][회색]
 
 ---
 
-**[IMAGE 5: Dendrogram 단계별 보기]**
 ![Dendrogram 단계별 보기](images/05_dendrogram_steps.png)
 
 ---
@@ -352,7 +347,6 @@ ACC 시각화는 여러 겹의 동심원으로 구성됩니다:
 
 ---
 
-**[IMAGE 6: ACC 시각화 상세]**
 ![ACC 시각화 상세](images/06_acc_detail.png)
 
 ---
@@ -400,7 +394,6 @@ Merge point를 클릭하여 좌우 branch를 교환할 수 있습니다.
 
 ---
 
-**[IMAGE 7: ACC2 Interactive Features]**
 ![ACC2 Interactive Features](images/07_acc2_interactive.png)
 
 ---
@@ -421,12 +414,10 @@ Dendrogram과 ACC 시각화를 이미지 파일로 저장할 수 있습니다.
 
 ---
 
-**[IMAGE 8: 이미지 저장 - 우클릭 메뉴]**
 ![이미지 저장 우클릭 메뉴](images/08_save_image_menu.png)
 
 ---
 
-**[IMAGE 9: 이미지 저장 - 파일 대화상자]**
 ![이미지 저장 대화상자](images/09_save_dialog.png)
 
 ---
@@ -537,7 +528,6 @@ T,0.8,1.0
 
 ---
 
-**[IMAGE 10: CSV 파일 오류 메시지]**
 ![CSV 오류 메시지](images/10_csv_error.png)
 
 ---
