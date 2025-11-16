@@ -173,3 +173,4 @@ build_linux/
 *.zip
 *.deb
 *.rpm
+build_info.json
