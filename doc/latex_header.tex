@@ -1,7 +1,17 @@
 % LaTeX header for image handling
 \usepackage{caption}
-% Hide figure captions - only show images
+\usepackage{float}
+
+% Change "Figure" to "그림" (Korean)
+\renewcommand{\figurename}{그림}
+
+% Configure figures to stay with captions
 \captionsetup[figure]{
-  labelformat=empty,
-  textformat=empty
+  position=below,
+  skip=10pt,
+  font=small,
+  labelfont=bf
 }
+
+% Prevent figure floating - keep images with their captions
+\floatplacement{figure}{H}

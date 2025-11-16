@@ -136,9 +136,11 @@ python acc_gui.py
 **중앙 패널**: Dendrogram 시각화
 **오른쪽 패널**: ACC 동심원 시각화
 
+그림 1은 프로그램의 전체 레이아웃을 보여줍니다.
+
 ---
 
-![메인 화면](images/01_main_window.png)
+![ACC 프로그램의 메인 화면입니다. 왼쪽에는 Similarity Matrix, 중앙에는 Dendrogram, 오른쪽에는 ACC 동심원 시각화가 배치되어 있습니다.](images/01_main_window.png)
 
 ---
 
@@ -158,19 +160,19 @@ python acc_gui.py
    - 완성된 dendrogram이 중앙 상단에 자동 표시됨
 3. 왼쪽 하단 "Load CSV" 버튼 클릭
    - `data/sample_inclusive.csv` 선택
-   - 완성된 dendrogram이 중앙 하단에 자동 표시됨
+   - 완성된 dendrogram이 중앙 하단에 자동 표시됨 (그림 2)
 4. 오른쪽 패널에서 "Generate ACC Visualization" 버튼 클릭
-   - 완성된 ACC 동심원이 자동 표시됨
+   - 완성된 ACC 동심원이 자동 표시됨 (그림 3)
 
 **참고**: CSV 로드 후 dendrogram과 ACC가 자동으로 마지막 단계(완성된 상태)로 표시됩니다. 단계별 과정을 보려면 슬라이더를 왼쪽으로 이동하세요.
 
 ---
 
-![샘플 데이터 로드 완료](images/02_sample_loaded.png)
+![샘플 CSV 파일을 로드하면 자동으로 Dendrogram과 ACC 시각화가 생성됩니다. 두 매트릭스 데이터가 모두 로드된 상태입니다.](images/02_sample_loaded.png)
 
 ---
 
-![ACC 생성 완료](images/03_acc_generated.png)
+![완성된 ACC 동심원 시각화입니다. 각 멤버가 원 위에 배치되고, 클러스터 관계가 동심원으로 표현됩니다.](images/03_acc_generated.png)
 
 ---
 
@@ -267,9 +269,11 @@ N   [회색][회색][회색][회색]
 - 회색 셀에 마우스를 올리면 해당 셀이 왜 편집 불가인지 툴팁으로 확인 가능
 - Upper triangle만 값을 입력하면 대칭성이 자동으로 유지됨
 
+그림 4는 Matrix 편집 화면을 보여줍니다.
+
 ---
 
-![Matrix 편집](images/04_matrix_editing.png)
+![Similarity Matrix를 직접 편집하는 화면입니다. 흰색 셀은 편집 가능하며, 회색 셀은 대칭성 또는 대각선 제약으로 편집이 불가능합니다.](images/04_matrix_editing.png)
 
 ---
 
@@ -301,11 +305,11 @@ N   [회색][회색][회색][회색]
 - **중간 단계** (Step 1~N-1): 부분적으로 병합된 dendrogram, 진행 중인 클러스터는 파란색으로 표시
 - **마지막 단계** (Step N): 모든 클러스터가 하나로 병합된 완성된 dendrogram → 원본 매트릭스가 다시 표시됨
 
-**CSV 로드 시 자동으로 마지막 단계로 이동**하여 완성된 결과를 즉시 확인할 수 있습니다.
+CSV 로드 시 자동으로 마지막 단계로 이동하여 완성된 결과를 즉시 확인할 수 있습니다 (그림 5).
 
 ---
 
-![Dendrogram 단계별 보기](images/05_dendrogram_steps.png)
+![슬라이더를 사용하여 Dendrogram의 클러스터링 과정을 단계별로 확인할 수 있습니다. 각 단계에서 어떤 클러스터들이 병합되는지 시각적으로 추적할 수 있습니다.](images/05_dendrogram_steps.png)
 
 ---
 
@@ -345,9 +349,11 @@ ACC 시각화는 여러 겹의 동심원으로 구성됩니다:
 - **빨간색 점**: Merge point (ACC2)
 - **회색 선**: 계층 연결선
 
+그림 6은 이러한 요소들이 실제로 어떻게 표현되는지 보여줍니다.
+
 ---
 
-![ACC 시각화 상세](images/06_acc_detail.png)
+![ACC 동심원 시각화의 상세 예시입니다. 각 멤버의 위치, 클러스터 경계(동심원), 그리고 계층 관계(연결선)를 확인할 수 있습니다.](images/06_acc_detail.png)
 
 ---
 
@@ -392,9 +398,11 @@ Merge point를 클릭하여 좌우 branch를 교환할 수 있습니다.
 - Swap 상태는 세션 내에서만 유지
 - 재생성 시 초기화
 
+그림 7은 ACC2의 인터랙티브 기능들을 보여줍니다.
+
 ---
 
-![ACC2 Interactive Features](images/07_acc2_interactive.png)
+![ACC2의 인터랙티브 기능을 보여줍니다. 멤버를 선택하면 하이라이트되며, Swap 기능으로 형제 클러스터의 위치를 바꿀 수 있습니다.](images/07_acc2_interactive.png)
 
 ---
 
@@ -404,9 +412,9 @@ Dendrogram과 ACC 시각화를 이미지 파일로 저장할 수 있습니다.
 
 #### 방법: 우클릭 메뉴 (권장)
 
-1. **Dendrogram 또는 ACC 시각화 영역에서 우클릭**
+1. **Dendrogram 또는 ACC 시각화 영역에서 우클릭** (그림 8)
 2. 컨텍스트 메뉴에서 **"Save Image As..."** 선택
-3. 저장 대화상자에서:
+3. 저장 대화상자에서 (그림 9):
    - 파일 이름 입력
    - 파일 형식 선택 (PNG/PDF/SVG)
    - 저장 위치 지정
@@ -414,11 +422,11 @@ Dendrogram과 ACC 시각화를 이미지 파일로 저장할 수 있습니다.
 
 ---
 
-![이미지 저장 우클릭 메뉴](images/08_save_image_menu.png)
+![시각화 영역에서 우클릭하면 나타나는 메뉴입니다. "Save Image As..." 옵션을 선택하여 이미지를 저장할 수 있습니다.](images/08_save_image_menu.png)
 
 ---
 
-![이미지 저장 대화상자](images/09_save_dialog.png)
+![파일 저장 대화상자에서 파일 형식(PNG, PDF, SVG)과 저장 위치를 선택할 수 있습니다.](images/09_save_dialog.png)
 
 ---
 
@@ -526,9 +534,11 @@ J,0.9,0.8  ← 1.0이어야 함
 T,0.8,1.0
 ```
 
+위와 같은 오류가 있으면 그림 10과 같은 오류 메시지가 표시됩니다.
+
 ---
 
-![CSV 오류 메시지](images/10_csv_error.png)
+![CSV 파일에 오류가 있을 때 표시되는 오류 메시지 대화상자입니다. 어떤 문제가 발생했는지 구체적인 오류 내용이 표시됩니다.](images/10_csv_error.png)
 
 ---
 
