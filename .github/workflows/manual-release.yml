@@ -1,0 +1,86 @@
+name: Manual Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version_tag:
+        description: 'Version tag (e.g., v0.0.3, v0.1.0-beta.1)'
+        required: true
+        type: string
+      prerelease:
+        description: 'Is this a pre-release?'
+        required: true
+        type: boolean
+        default: false
+      release_notes:
+        description: 'Release notes (optional)'
+        required: false
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  call-build-workflow:
+    uses: ./.github/workflows/reusable_build.yml
+    with:
+      build_number: ${{ github.run_number }}
+
+  create-release:
+    needs: call-build-workflow
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: release-files/
+
+      - name: List downloaded artifacts
+        run: |
+          echo "=== Downloaded artifacts ==="
+          ls -laR release-files/
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.event.inputs.version_tag }}-build.${{ github.run_number }}
+          name: ACC ${{ github.event.inputs.version_tag }} (Build ${{ github.run_number }})
+          body: |
+            🚀 ACC ${{ github.event.inputs.version_tag }} Release
+
+            Built from commit: ${{ github.sha }}
+            Build number: ${{ github.run_number }}
+
+            ${{ github.event.inputs.release_notes }}
+
+            ## Downloads
+
+            - **Windows**: ACC-Windows-*.zip (Installer or Portable)
+            - **macOS**: ACC-macOS-Installer-*.dmg
+            - **Linux**: ACC-Linux-*.AppImage
+
+            ## Installation
+
+            ### Windows
+            - If installer (setup.exe): Run the installer
+            - If portable: Extract ZIP and run ACC.exe
+
+            ### macOS
+            - Open the DMG file
+            - Drag ACC.app to Applications folder
+            - Right-click and "Open" on first launch (security)
+
+            ### Linux
+            - Make executable: `chmod +x ACC-Linux-*.AppImage`
+            - Run: `./ACC-Linux-*.AppImage`
+
+          prerelease: ${{ github.event.inputs.prerelease }}
+          files: |
+            release-files/acc-windows/ACC-Windows-*.zip
+            release-files/acc-macos/ACC-macOS-Installer-*.dmg
+            release-files/acc-linux/ACC-Linux-*.AppImage
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
