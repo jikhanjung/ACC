@@ -83,10 +83,20 @@ def generate_pdf(input_file: str, output_file: str, engine: str = "xelatex"):
         "-V",
         "fontsize=11pt",  # Font size
         "--highlight-style=tango",  # Code syntax highlighting
+        "-V",
+        "caption-position:bottom",  # Place captions below images
     ]
 
     if engine == "pdflatex" or engine == "xelatex":
         extra_args.append(f"--pdf-engine={engine}")
+
+        # Add LaTeX packages for better image caption handling
+        extra_args.extend([
+            "-V",
+            "header-includes=\\usepackage{caption}",
+            "-V",
+            "header-includes=\\captionsetup[figure]{position=bottom,skip=10pt}",
+        ])
 
         # XeLaTeX is required for Korean/Unicode support
         if engine == "xelatex":
@@ -105,9 +115,9 @@ def generate_pdf(input_file: str, output_file: str, engine: str = "xelatex"):
 
             extra_args.extend([
                 "-V",
-                f"CJKmainfont={korean_font}",
-                "-V",
                 f"mainfont={korean_font}",
+                "-V",
+                f"monofont={korean_font}",
             ])
         else:
             extra_args.extend([

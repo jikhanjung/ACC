@@ -161,6 +161,7 @@ output/
 results/
 *.docx
 .claude/settings.local.json
+screenshot*.png
 
 # Build and packaging
 InnoSetup/Output/
