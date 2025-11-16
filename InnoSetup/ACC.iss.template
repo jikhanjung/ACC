@@ -6,6 +6,8 @@ AppName=ACC
 AppVersion={#AppVersion}
 AppPublisher=jikhanjung
 AppPublisherURL=https://github.com/jikhanjung/ACC
+AppSupportURL=https://github.com/jikhanjung/ACC/issues
+AppUpdatesURL=https://github.com/jikhanjung/ACC/releases
 DefaultDirName={autopf}\ACC
 DefaultGroupName=ACC
 OutputDir={{DIST_PATH}}\..\InnoSetup\Output
@@ -13,9 +15,16 @@ OutputDir={{DIST_PATH}}\..\InnoSetup\Output
 Compression=lzma/normal
 SolidCompression=no
 OutputBaseFilename=ACC_v{#AppVersion}_build{#BuildNumber}_Installer
-UninstallDisplayName=ACC - Area Affinity in Concentric Circles
+UninstallDisplayName=ACC - Adaptive Cluster Circle
 ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
+; License and documentation
+LicenseFile={{PROJECT_ROOT}}\LICENSE
+; Version info
+VersionInfoVersion={#AppVersion}.{#BuildNumber}
+VersionInfoCompany=jikhanjung
+VersionInfoDescription=Adaptive Cluster Circle - Hierarchical cluster visualization
+VersionInfoCopyright=Copyright (C) 2024-2025 jikhanjung
 
 [Files]
 ; Include main executable
@@ -24,8 +33,12 @@ Source: "{{DIST_PATH}}\ACC\ACC.exe"; DestDir: "{app}"; Flags: ignoreversion
 ; Include all other files and directories
 Source: "{{DIST_PATH}}\ACC\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 
+; Sample data files - install to user's Documents folder
+Source: "{{PROJECT_ROOT}}\data\*.csv"; DestDir: "{userdocs}\ACC\SampleData"; Flags: ignoreversion createallsubdirs
+
 [Icons]
 Name: "{group}\ACC"; Filename: "{app}\ACC.exe"
+Name: "{group}\Sample Data Folder"; Filename: "{userdocs}\ACC\SampleData"
 Name: "{group}\Uninstall ACC"; Filename: "{uninstallexe}"
 Name: "{autodesktop}\ACC"; Filename: "{app}\ACC.exe"; Tasks: desktopicon
 
@@ -34,3 +47,17 @@ Name: "desktopicon"; Description: "Create a &desktop icon"; GroupDescription: "A
 
 [Run]
 Filename: "{app}\ACC.exe"; Description: "Launch ACC"; Flags: nowait postinstall skipifsilent
+
+[Messages]
+WelcomeLabel2=This will install [name/ver] on your computer.%n%nACC (Adaptive Cluster Circle) is a tool for visualizing hierarchical cluster relationships using circular diagrams.%n%nSample data files will be installed to:%n{userdocs}\ACC\SampleData
+
+[Code]
+procedure CurStepChanged(CurStep: TSetupStep);
+begin
+  if CurStep = ssPostInstall then
+  begin
+    // Create sample data directory if it doesn't exist
+    if not DirExists(ExpandConstant('{userdocs}\ACC\SampleData')) then
+      ForceDirectories(ExpandConstant('{userdocs}\ACC\SampleData'));
+  end;
+end;

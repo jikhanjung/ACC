@@ -90,9 +90,12 @@ def prepare_inno_setup_template(template_path, version):
     content = re.sub(r'#define AppVersion ".*?"', f'#define AppVersion "{version}"', content)
     content = content.replace("{{VERSION}}", version)
 
-    # Get absolute path to dist directory
+    # Get absolute paths
     dist_abs_path = Path("dist").resolve()
+    project_root = Path.cwd()
+
     content = content.replace("{{DIST_PATH}}", str(dist_abs_path))
+    content = content.replace("{{PROJECT_ROOT}}", str(project_root))
 
     # Write temporary ISS file
     temp_iss.write_text(content)
