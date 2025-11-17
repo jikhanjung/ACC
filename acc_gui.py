@@ -37,6 +37,7 @@ from PyQt5.QtWidgets import (
     QSplitter,
     QTableWidget,
     QTableWidgetItem,
+    QTabWidget,
     QTextEdit,
     QVBoxLayout,
     QWidget,
@@ -934,8 +935,8 @@ class StepMatrixWidget(QWidget):
         if self.updating_mirror:
             return
 
-        # Only process if we're at step 0 (original matrix)
-        if self.current_step != 0:
+        # Skip if we're programmatically updating
+        if hasattr(self, "_updating_programmatically") and self._updating_programmatically:
             return
 
         row = item.row()
@@ -971,15 +972,28 @@ class StepMatrixWidget(QWidget):
 
         # Update the underlying data
         if self.matrix_data is not None:
+            row_label = self.matrix_data.index[row]
+            col_label = self.matrix_data.columns[col]
+
             self.matrix_data.iloc[row, col] = value
             self.matrix_data.iloc[col, row] = value  # Mirror to lower triangle (data only)
 
-            # Update the step manager with new matrix
+            # Regenerate clustering with updated matrix
             self.step_manager = ClusteringStepManager(self.matrix_data.values, self.matrix_data.index.tolist())
 
-            # Note: Lower triangle cells remain empty (not updated visually)
+            # Move to last step to show full dendrogram
+            max_steps = len(self.step_manager.linkage_matrix) if self.step_manager else 0
+            self.current_step = max_steps
 
-            # Notify parent to update dendrograms
+            # Update slider
+            self.step_slider.setMaximum(max_steps)
+            self.step_slider.setValue(max_steps)
+
+            # Update info label
+            self.info_label.setText(f"✓ Updated {row_label}-{col_label}: {value:.3f}")
+            self.info_label.setStyleSheet("color: green; font-size: 10px;")
+
+            # Notify parent to update dendrogram
             if hasattr(self.parent(), "on_matrix_loaded"):
                 self.parent().on_matrix_loaded(self.matrix_type)
 
@@ -1111,13 +1125,38 @@ class StepDendrogramWidget(QWidget):
     def set_step_manager(self, step_manager):
         """Set the step manager"""
         self.step_manager = step_manager
-        self.current_step = 0
+        # Keep current step as set by the matrix widget
+        # (matrix widget sets step to 0 before calling this)
         self.update_dendrogram()
 
     def set_step(self, step_num):
         """Set current step and update display"""
         self.current_step = step_num
         self.update_dendrogram()
+
+    def clear_display(self):
+        """Clear dendrogram display (called when matrix is modified)"""
+        self.step_manager = None
+        self.current_step = 0
+        self.figure.clear()
+        ax = self.figure.add_subplot(111)
+        ax.text(
+            0.5,
+            0.5,
+            "Matrix Modified\n\nPlease reload or regenerate\nto see updated dendrogram",
+            ha="center",
+            va="center",
+            fontsize=12,
+            color="orange",
+            weight="bold",
+        )
+        ax.set_xlim(0, 1)
+        ax.set_ylim(0, 1)
+        ax.axis("off")
+        self.figure.tight_layout()
+        self.canvas.draw()
+        self.info_label.setText("Matrix modified - reload needed")
+        self.info_label.setStyleSheet("color: orange; font-size: 10px;")
 
     def update_dendrogram(self):
         """Update dendrogram for current step"""
@@ -1187,7 +1226,8 @@ class StepDendrogramWidget(QWidget):
                 # Convert to similarity and set as labels
                 # similarity = max_sim - distance
                 similarity_labels = [f"{max_sim - x:.3f}" if 0 <= x <= max_sim else "" for x in xticks]
-                ax.set_xticklabels(similarity_labels)
+                ax.set_xticks(xticks)  # Set tick locations first
+                ax.set_xticklabels(similarity_labels)  # Then set labels
 
                 # Add similarity values to each merge point if checkbox is checked
                 if self.show_values_checkbox.isChecked():
@@ -1678,49 +1718,137 @@ class ACCVisualizationWidget(QWidget):
         return []
 
     def apply_acc2_swaps(self, acc2_data, swaps):
-        """Apply swaps to ACC2 data and return modified copy"""
+        """Apply swaps to ACC2 data and return modified copy
+
+        Strategy: For each swap, exchange the angular positions of two child branches
+        by calculating the offset between them and their descendants.
+        """
         import copy
 
         data = copy.deepcopy(acc2_data)
-
         positions = data["positions"]
-        merge_points = data["merge_points"]
         levels = data["levels"]
 
-        # Apply each swap
-        for level_idx, should_swap in swaps.items():
-            if not should_swap or level_idx >= len(levels):
+        # Apply swaps in order from lowest level (earliest merge) to highest level (latest merge)
+        sorted_swap_levels = sorted([idx for idx, should_swap in swaps.items() if should_swap])
+
+        for level_idx in sorted_swap_levels:
+            if level_idx >= len(levels):
                 continue
 
             level = levels[level_idx]
-            cluster_id = f"[{level['cluster1']}, {level['cluster2']}]"
+            cluster1_id = level["cluster1"]
+            cluster2_id = level["cluster2"]
+            cluster_id = f"[{cluster1_id}, {cluster2_id}]"
 
-            if cluster_id not in merge_points:
+            # Calculate current merge point based on current positions
+            current_merge_points = calculate_merge_points(levels, positions)
+            if cluster_id not in current_merge_points:
                 continue
 
-            merge_angle = merge_points[cluster_id]["angle"]
+            # Get the angles of the two children (could be areas or clusters)
+            def get_child_angle(child_id):
+                if child_id in positions:
+                    return positions[child_id]["angle"]
+                if child_id in current_merge_points:
+                    return current_merge_points[child_id]["angle"]
+                return None
 
-            # Get all descendants of both children
-            child1_areas = self.get_all_descendants(level["cluster1"], levels, positions)
-            child2_areas = self.get_all_descendants(level["cluster2"], levels, positions)
+            child1_angle = get_child_angle(cluster1_id)
+            child2_angle = get_child_angle(cluster2_id)
 
-            # Mirror all descendant angles around merge_angle
-            for area in child1_areas + child2_areas:
+            if child1_angle is None or child2_angle is None:
+                continue
+
+            # Get descendants for each child
+            child1_descendants = self.get_all_descendants(cluster1_id, levels, positions)
+            child2_descendants = self.get_all_descendants(cluster2_id, levels, positions)
+
+            # Calculate the angular offset needed to swap the two children
+            # We want to swap them around their midpoint
+            midpoint_angle = (child1_angle + child2_angle) / 2.0
+            offset1 = child1_angle - midpoint_angle
+            offset2 = child2_angle - midpoint_angle
+
+            # Store new angles temporarily to avoid overwriting during swap
+            new_angles = {}
+
+            # Move child1's descendants to where child2 was
+            for area in child1_descendants:
                 if area in positions:
-                    old_angle = positions[area]["angle"]
-                    new_angle = 2 * merge_angle - old_angle
-                    positions[area]["angle"] = new_angle
+                    current_angle = positions[area]["angle"]
+                    # Calculate relative position within child1
+                    relative_angle = current_angle - child1_angle
+                    # Place it at child2's position with same relative angle
+                    new_angles[area] = child2_angle + relative_angle
 
-        # Recalculate merge points and lines with new positions
+            # Move child2's descendants to where child1 was
+            for area in child2_descendants:
+                if area in positions:
+                    current_angle = positions[area]["angle"]
+                    # Calculate relative position within child2
+                    relative_angle = current_angle - child2_angle
+                    # Place it at child1's position with same relative angle
+                    new_angles[area] = child1_angle + relative_angle
+
+            # Apply all new angles at once
+            for area, new_angle in new_angles.items():
+                positions[area]["angle"] = new_angle
+
+        # Recalculate merge points and lines with final positions
         data["merge_points"] = calculate_merge_points(levels, positions)
         data["lines"] = generate_connection_lines(levels, positions, data["merge_points"])
 
         return data
 
-    def plot_acc2(self, acc2_data, reset_swaps=True):
+    def plot_acc2(self, acc2_data, reset_swaps=True, acc1_style=False):
         """Plot ACC2 visualization with dendrogram on concentric circles"""
-        # Store ACC2 data for interactive manipulation
+        import copy
+
+        # Apply ACC1 style to the data first (before storing)
+        if acc1_style:
+            acc2_data = copy.deepcopy(acc2_data)
+
+            # For each area, find its first merge level and place it on that circle
+            area_to_first_merge_radius = {}
+
+            for level_idx, level in enumerate(acc2_data["levels"]):
+                cluster1 = level["cluster1"]
+                cluster2 = level["cluster2"]
+                merge_radius = level["radius"]
+
+                # Get all areas in cluster1 and cluster2
+                def get_areas(cluster_id):
+                    # If it's already an area, return it
+                    if cluster_id in acc2_data["positions"]:
+                        return [cluster_id]
+                    # Otherwise, recursively find areas in this cluster
+                    areas = []
+                    for lvl in acc2_data["levels"]:
+                        if f"[{lvl['cluster1']}, {lvl['cluster2']}]" == cluster_id:
+                            areas.extend(get_areas(lvl["cluster1"]))
+                            areas.extend(get_areas(lvl["cluster2"]))
+                            break
+                    return areas
+
+                areas1 = get_areas(cluster1)
+                areas2 = get_areas(cluster2)
+
+                # For each area, if not yet assigned, assign to this merge radius
+                for area in areas1 + areas2:
+                    if area not in area_to_first_merge_radius:
+                        area_to_first_merge_radius[area] = merge_radius
+
+            # Update position radii
+            for area, merge_radius in area_to_first_merge_radius.items():
+                if area in acc2_data["positions"]:
+                    acc2_data["positions"][area]["radius"] = merge_radius
+
+        # Store ACC2 data for interactive manipulation (with ACC1 style already applied if requested)
         self.acc2_data = acc2_data
+
+        # Store acc1_style setting
+        self.acc1_style = acc1_style
 
         # Initialize or keep swap state
         if reset_swaps or not hasattr(self, "acc2_swaps"):
@@ -1801,10 +1929,17 @@ class ACCVisualizationWidget(QWidget):
                 ax.add_patch(arc)
 
         # Draw radial lines
+        # Get innermost circle radius (minimum radius in circles)
+        innermost_radius = min(circles) if circles else 0.5
+
         for line in lines:
             if line["type"] == "radial":
                 r1, angle = line["from"]
                 r2, _ = line["to"]
+
+                # Skip radial lines starting from innermost circle if ACC1 style
+                if self.acc1_style and abs(r1 - innermost_radius) < 0.001:
+                    continue
 
                 # Convert to cartesian
                 x1, y1 = pol2cart(r1, angle)
@@ -1829,27 +1964,52 @@ class ACCVisualizationWidget(QWidget):
             ax.text(label_x, label_y, area, fontsize=14, ha="center", va="center", fontweight="bold", color="darkblue")
 
         # Step 4: Draw merge points (small red dots) and store their info
-        merge_point_data = []  # Store (x, y, angle, sub_sim, cluster_id)
+        merge_point_data = []  # Store (x, y, merge_angle, subtended_angle, sub_sim, cluster_id)
 
-        # Create mapping from cluster_id to subordinate similarity
+        # Create mapping from cluster_id to subordinate similarity and children
         cluster_to_subsim = {}
+        cluster_to_children = {}
         for level in levels:
             cluster_id = f"[{level['cluster1']}, {level['cluster2']}]"
             cluster_to_subsim[cluster_id] = level["sub_sim"]
+            cluster_to_children[cluster_id] = (level["cluster1"], level["cluster2"])
 
         for cluster_id, mp in merge_points.items():
-            angle = mp["angle"]
+            merge_angle = mp["angle"]
             radius = mp["radius"]
 
             # Convert to cartesian
-            x, y = pol2cart(radius, angle)
+            x, y = pol2cart(radius, merge_angle)
 
             # Draw merge point
             ax.scatter(x, y, c="red", s=50, zorder=9, edgecolors="black", linewidth=1, alpha=0.6)
 
+            # Calculate subtended angle (angle between two children)
+            subtended_angle = 0.0
+            if cluster_id in cluster_to_children:
+                child1_id, child2_id = cluster_to_children[cluster_id]
+
+                # Get child angles
+                def get_child_angle(child_id):
+                    if child_id in positions:
+                        return positions[child_id]["angle"]
+                    if child_id in merge_points:
+                        return merge_points[child_id]["angle"]
+                    return None
+
+                child1_angle = get_child_angle(child1_id)
+                child2_angle = get_child_angle(child2_id)
+
+                if child1_angle is not None and child2_angle is not None:
+                    # Calculate absolute difference
+                    subtended_angle = abs(child2_angle - child1_angle)
+                    # Handle wrap-around (e.g., 350° to 10° should be 20°, not 340°)
+                    if subtended_angle > 180:
+                        subtended_angle = 360 - subtended_angle
+
             # Store merge point data for hover
             sub_sim = cluster_to_subsim.get(cluster_id, 0.0)
-            merge_point_data.append((x, y, angle, sub_sim, cluster_id))
+            merge_point_data.append((x, y, merge_angle, subtended_angle, sub_sim, cluster_id))
 
         # Set plot limits
         max_radius = max(circles)
@@ -1912,18 +2072,18 @@ class ACCVisualizationWidget(QWidget):
             min_dist = float("inf")
             closest_point = None
 
-            for x, y, angle, sub_sim, cluster_id in merge_point_data:
+            for x, y, merge_angle, subtended_angle, sub_sim, cluster_id in merge_point_data:
                 dist = ((event.xdata - x) ** 2 + (event.ydata - y) ** 2) ** 0.5
                 if dist < min_dist:
                     min_dist = dist
-                    closest_point = (x, y, angle, sub_sim, cluster_id)
+                    closest_point = (x, y, merge_angle, subtended_angle, sub_sim, cluster_id)
 
             # Show annotation if close enough (threshold based on axes limits)
             threshold = lim * 0.05  # 5% of axis limit
             if min_dist < threshold and closest_point:
-                x, y, angle, sub_sim, cluster_id = closest_point
+                x, y, merge_angle, subtended_angle, sub_sim, cluster_id = closest_point
                 annot.xy = (x, y)
-                text = f"{cluster_id}\nAngle: {angle:.1f}°\nSub sim: {sub_sim:.3f}"
+                text = f"{cluster_id}\nAngle: {subtended_angle:.1f}°\nSub sim: {sub_sim:.3f}"
                 annot.set_text(text)
                 annot.set_visible(True)
             else:
@@ -1948,11 +2108,11 @@ class ACCVisualizationWidget(QWidget):
             closest_point = None
             closest_level_idx = None
 
-            for x, y, angle, sub_sim, cluster_id in merge_point_data:
+            for x, y, merge_angle, subtended_angle, sub_sim, cluster_id in merge_point_data:
                 dist = ((event.xdata - x) ** 2 + (event.ydata - y) ** 2) ** 0.5
                 if dist < min_dist:
                     min_dist = dist
-                    closest_point = (x, y, angle, sub_sim, cluster_id)
+                    closest_point = (x, y, merge_angle, subtended_angle, sub_sim, cluster_id)
 
                     # Find level index for this cluster_id
                     for idx, level in enumerate(levels):
@@ -1971,7 +2131,7 @@ class ACCVisualizationWidget(QWidget):
                 self.plot_acc2(self.acc2_data, reset_swaps=False)
 
                 # Show feedback
-                _, _, _, _, cluster_id = closest_point
+                _, _, _, _, _, cluster_id = closest_point
                 swap_state = "swapped" if self.acc2_swaps[closest_level_idx] else "normal"
                 self.info_label.setText(f"✓ {cluster_id} - {swap_state}")
                 self.info_label.setStyleSheet("color: blue; font-size: 10px;")
@@ -2079,6 +2239,21 @@ class LeftPanel(ColumnPanel):
             elif matrix_type == "Inclusive":
                 main_window.update_dendrogram("inclusive")
 
+    def on_matrix_modified(self, matrix_type):
+        """
+        Called when a matrix value is modified
+
+        Args:
+            matrix_type: 'Subordinate' or 'Inclusive'
+        """
+        main_window = self.window()
+        if isinstance(main_window, MainWindow):
+            # Clear the dendrogram
+            if matrix_type == "Subordinate":
+                main_window.clear_dendrogram("subordinate")
+            elif matrix_type == "Inclusive":
+                main_window.clear_dendrogram("inclusive")
+
     def on_step_changed(self):
         """Called when step changes"""
         main_window = self.window()
@@ -2088,26 +2263,19 @@ class LeftPanel(ColumnPanel):
     def edit_area_list(self):
         """Open dialog to edit area list"""
         try:
-            print("Edit Area List button clicked")  # Debug
-
             # Check if matrices are loaded
             sub_loaded = self.sub_matrix_widget.is_loaded()
             inc_loaded = self.inc_matrix_widget.is_loaded()
 
             if sub_loaded and inc_loaded:
                 # Both loaded - edit existing
-                print("Both matrices loaded - editing existing")  # Debug
 
                 # Get current labels (should be same for both)
                 sub_labels = self.sub_matrix_widget.get_labels()
                 inc_labels = self.inc_matrix_widget.get_labels()
 
-                print(f"Sub labels: {sub_labels}")  # Debug
-                print(f"Inc labels: {inc_labels}")  # Debug
-
                 # Verify they match
                 if sub_labels != inc_labels:
-                    print("Label mismatch detected")  # Debug
                     QMessageBox.warning(
                         self,
                         "Label Mismatch",
@@ -2122,7 +2290,6 @@ class LeftPanel(ColumnPanel):
 
             elif sub_loaded or inc_loaded:
                 # Only one loaded - warn user
-                print("Only one matrix loaded")  # Debug
                 QMessageBox.warning(
                     self,
                     "Incomplete Data",
@@ -2133,18 +2300,14 @@ class LeftPanel(ColumnPanel):
 
             else:
                 # Neither loaded - start from scratch
-                print("No matrices loaded - starting from scratch")  # Debug
                 sub_labels = []
                 sub_df = pd.DataFrame()
                 inc_df = pd.DataFrame()
 
-            print("Creating dialog...")  # Debug
             # Open dialog
             dialog = AreaListEditorDialog(sub_labels, sub_df, inc_df, self)
-            print("Dialog created, executing...")  # Debug
 
             result_code = dialog.exec_()
-            print(f"Dialog closed with code: {result_code}")  # Debug
 
             if result_code == QDialog.Accepted:
                 result = dialog.get_result()
@@ -2199,7 +2362,7 @@ class CenterPanel(ColumnPanel):
 
 
 class RightPanel(ColumnPanel):
-    """Right panel: ACC visualization"""
+    """Right panel: ACC visualization with tabs for ACC1 and ACC2"""
 
     def __init__(self, parent=None):
         super().__init__("ACC Visualization", parent)
@@ -2209,7 +2372,7 @@ class RightPanel(ColumnPanel):
         # Button layout (horizontal)
         button_layout = QHBoxLayout()
 
-        # Generate button
+        # Single Generate button
         self.generate_btn = QPushButton("🎯 Generate ACC")
         self.generate_btn.setStyleSheet("""
             QPushButton {
@@ -2229,27 +2392,6 @@ class RightPanel(ColumnPanel):
         """)
         self.generate_btn.clicked.connect(self.on_generate_clicked)
         button_layout.addWidget(self.generate_btn, stretch=2)
-
-        # Generate ACC2 button
-        self.generate_acc2_btn = QPushButton("🎯 Generate ACC2")
-        self.generate_acc2_btn.setStyleSheet("""
-            QPushButton {
-                background-color: #9C27B0;
-                color: white;
-                font-size: 14px;
-                font-weight: bold;
-                padding: 12px;
-                border-radius: 6px;
-            }
-            QPushButton:hover {
-                background-color: #7B1FA2;
-            }
-            QPushButton:pressed {
-                background-color: #6A1B9A;
-            }
-        """)
-        self.generate_acc2_btn.clicked.connect(self.on_generate_acc2_clicked)
-        button_layout.addWidget(self.generate_acc2_btn, stretch=2)
 
         # Show Log button
         self.show_log_btn = QPushButton("📋 Show Log")
@@ -2279,27 +2421,161 @@ class RightPanel(ColumnPanel):
 
         self.content_layout.addLayout(button_layout)
 
-        # ACC visualization
+        # Create tab widget
+        self.tab_widget = QTabWidget()
+        self.tab_widget.setStyleSheet("""
+            QTabWidget::pane {
+                border: 1px solid #ccc;
+                border-radius: 4px;
+            }
+            QTabBar::tab {
+                background-color: #f0f0f0;
+                padding: 8px 16px;
+                margin-right: 2px;
+                border: 1px solid #ccc;
+                border-bottom: none;
+                border-top-left-radius: 4px;
+                border-top-right-radius: 4px;
+            }
+            QTabBar::tab:selected {
+                background-color: white;
+                font-weight: bold;
+            }
+            QTabBar::tab:hover {
+                background-color: #e0e0e0;
+            }
+        """)
+
+        # Tab 1: ACC (original)
         self.acc_widget = ACCVisualizationWidget()
-        self.content_layout.addWidget(self.acc_widget)
+        self.tab_widget.addTab(self.acc_widget, "ACC")
+
+        # Tab 2: ACC2 with options
+        self.acc2_tab = QWidget()
+        acc2_layout = QVBoxLayout(self.acc2_tab)
+        acc2_layout.setContentsMargins(0, 0, 0, 0)
+        acc2_layout.setSpacing(5)
+
+        # ACC2 options panel
+        options_panel = QWidget()
+        options_layout = QHBoxLayout(options_panel)
+        options_layout.setContentsMargins(5, 5, 5, 5)
+
+        options_label = QLabel("<b>ACC2 Options:</b>")
+        options_layout.addWidget(options_label)
+
+        # Min diameter
+        options_layout.addWidget(QLabel("Min Diameter:"))
+        self.acc2_min_diameter = QLineEdit("1.0")
+        self.acc2_min_diameter.setFixedWidth(60)
+        self.acc2_min_diameter.setStyleSheet("""
+            QLineEdit {
+                padding: 4px;
+                border: 1px solid #ccc;
+                border-radius: 3px;
+            }
+        """)
+        options_layout.addWidget(self.acc2_min_diameter)
+
+        # Max diameter
+        options_layout.addWidget(QLabel("Max Diameter:"))
+        self.acc2_max_diameter = QLineEdit("2.0")
+        self.acc2_max_diameter.setFixedWidth(60)
+        self.acc2_max_diameter.setStyleSheet("""
+            QLineEdit {
+                padding: 4px;
+                border: 1px solid #ccc;
+                border-radius: 3px;
+            }
+        """)
+        options_layout.addWidget(self.acc2_max_diameter)
+
+        # ACC1 Style checkbox
+        self.acc2_acc1_style = QCheckBox("ACC1 Style")
+        self.acc2_acc1_style.setToolTip("Place areas on their first merge circle instead of innermost circle")
+        options_layout.addWidget(self.acc2_acc1_style)
+
+        # Apply button
+        apply_btn = QPushButton("Apply")
+        apply_btn.setFixedWidth(80)
+        apply_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #4CAF50;
+                color: white;
+                padding: 4px 8px;
+                border-radius: 3px;
+            }
+            QPushButton:hover {
+                background-color: #45a049;
+            }
+        """)
+        apply_btn.clicked.connect(self.on_acc2_options_apply)
+        options_layout.addWidget(apply_btn)
+
+        options_layout.addStretch()
+
+        acc2_layout.addWidget(options_panel)
+
+        # ACC2 visualization widget
+        self.acc2_widget = ACCVisualizationWidget()
+        acc2_layout.addWidget(self.acc2_widget)
+
+        self.tab_widget.addTab(self.acc2_tab, "ACC2")
+
+        # Connect tab change to update button text
+        self.tab_widget.currentChanged.connect(self.on_tab_changed)
+
+        self.content_layout.addWidget(self.tab_widget)
+
+    def on_tab_changed(self, index):
+        """Update button text when tab changes"""
+        if index == 0:
+            self.generate_btn.setText("🎯 Generate ACC")
+        elif index == 1:
+            self.generate_btn.setText("🎯 Generate ACC2")
 
     def on_generate_clicked(self):
-        """Handle generate button click"""
+        """Handle generate button click - generates based on current tab"""
         main_window = self.window()
         if isinstance(main_window, MainWindow):
-            main_window.generate_acc()
-
-    def on_generate_acc2_clicked(self):
-        """Handle generate ACC2 button click"""
-        main_window = self.window()
-        if isinstance(main_window, MainWindow):
-            main_window.generate_acc2()
+            # Check which tab is currently active
+            current_tab = self.tab_widget.currentIndex()
+            if current_tab == 0:
+                # ACC tab
+                main_window.generate_acc()
+            elif current_tab == 1:
+                # ACC2 tab
+                main_window.generate_acc2()
 
     def on_show_log_clicked(self):
         """Handle show log button click"""
         main_window = self.window()
         if isinstance(main_window, MainWindow):
             main_window.show_acc_log()
+
+    def on_acc2_options_apply(self):
+        """Handle ACC2 options apply button click"""
+        main_window = self.window()
+        if isinstance(main_window, MainWindow):
+            # Validate inputs
+            try:
+                min_diameter = float(self.acc2_min_diameter.text())
+                max_diameter = float(self.acc2_max_diameter.text())
+                acc1_style = self.acc2_acc1_style.isChecked()
+
+                if min_diameter <= 0 or max_diameter <= 0:
+                    QMessageBox.warning(self, "Invalid Input", "Diameters must be positive values")
+                    return
+
+                if min_diameter >= max_diameter:
+                    QMessageBox.warning(self, "Invalid Input", "Min diameter must be less than max diameter")
+                    return
+
+                # Regenerate ACC2 with new parameters
+                main_window.generate_acc2_with_options(min_diameter, max_diameter, acc1_style)
+
+            except ValueError:
+                QMessageBox.warning(self, "Invalid Input", "Please enter valid numeric values for diameters")
 
 
 class MainWindow(QMainWindow):
@@ -2369,6 +2645,18 @@ class MainWindow(QMainWindow):
     def update_dendrograms(self):
         """Update both dendrograms (for backward compatibility)"""
         self.update_dendrogram("both")
+
+    def clear_dendrogram(self, which):
+        """
+        Clear dendrogram when matrix is modified
+
+        Args:
+            which: 'subordinate' or 'inclusive'
+        """
+        if which == "subordinate":
+            self.center_panel.sub_dendro_widget.clear_display()
+        elif which == "inclusive":
+            self.center_panel.inc_dendro_widget.clear_display()
 
     def update_dendrogram_steps(self):
         """Update dendrogram display when step changes"""
@@ -2441,34 +2729,18 @@ class MainWindow(QMainWindow):
             # Visualize with step controls
             self.right_panel.acc_widget.set_acc_steps(acc_steps)
 
-            # Build info message
+            # No message box - just silently complete
+            # Log info for debugging if needed
             if acc_steps:
                 final_step = acc_steps[-1]
-                # New algorithm uses "clusters" list instead of single "current_cluster"
                 clusters = final_step["clusters"]
-
-                # Get the final merged cluster (should be only one at the end)
                 if clusters:
                     cluster = clusters[0]
-                    members = cluster["members"]
-                    diameter = cluster["diameter"]
-                    theta = cluster["angle"]  # Note: new algorithm uses "angle" not "theta"
-
-                    QMessageBox.information(
-                        self,
-                        "Success",
-                        f"ACC Visualization generated! (New Algorithm)\n\n"
-                        f"Total steps: {len(acc_steps)}\n"
-                        f"Number of final clusters: {len(clusters)}\n"
-                        f"Total members: {len(members)}\n"
-                        f"Final diameter: {diameter:.3f}\n"
-                        f"Final angle: {theta:.2f}°\n\n"
-                        f"Use slider to navigate through steps",
-                    )
+                    print(f"[ACC] Generated: {len(acc_steps)} steps, {len(cluster['members'])} members")
                 else:
-                    QMessageBox.warning(self, "Warning", "ACC generation completed but no clusters found")
+                    print("[ACC] Warning: No clusters found")
             else:
-                QMessageBox.warning(self, "No Steps", "No ACC steps were generated. Check your data.")
+                print("[ACC] Warning: No steps generated")
 
         except Exception as e:
             QMessageBox.critical(self, "Error", f"Failed to generate visualization:\n{str(e)}")
@@ -2477,7 +2749,21 @@ class MainWindow(QMainWindow):
             traceback.print_exc()
 
     def generate_acc2(self):
-        """Generate ACC2 visualization with all dendrogram level circles"""
+        """Generate ACC2 visualization with default parameters"""
+        # Get default min/max diameter from UI
+        try:
+            min_diameter = float(self.right_panel.acc2_min_diameter.text())
+            max_diameter = float(self.right_panel.acc2_max_diameter.text())
+            acc1_style = self.right_panel.acc2_acc1_style.isChecked()
+        except:
+            min_diameter = 1.0
+            max_diameter = 2.0
+            acc1_style = False
+
+        self.generate_acc2_with_options(min_diameter, max_diameter, acc1_style)
+
+    def generate_acc2_with_options(self, min_diameter, max_diameter, acc1_style=False):
+        """Generate ACC2 visualization with custom diameter range"""
         try:
             # Check if both matrices are loaded
             if not self.left_panel.sub_matrix_widget.is_loaded():
@@ -2506,25 +2792,47 @@ class MainWindow(QMainWindow):
                 QMessageBox.warning(self, "Invalid Inclusive Matrix", f"Inclusive matrix validation failed:\n{msg}")
                 return
 
-            # Build ACC2
+            # Build ACC2 with default parameters
             acc2_data = build_acc2(sub_matrix, inc_matrix, unit=1.0)
 
-            # Visualize ACC2
-            self.right_panel.acc_widget.plot_acc2(acc2_data)
+            # Convert diameter inputs to radius (circles are stored as radii)
+            min_radius = min_diameter / 2.0
+            max_radius = max_diameter / 2.0
 
-            # Show success message
-            QMessageBox.information(
-                self,
-                "Success",
-                f"ACC2 Visualization generated!\n\n"
-                f"Total areas: {len(acc2_data['positions'])}\n"
-                f"Merge levels: {len(acc2_data['levels'])}\n"
-                f"Concentric circles: {len(acc2_data['circles'])}\n"
-                f"All areas at r=0.5\n\n"
-                f"Features:\n"
-                f"- Circle size: diameter = 1 + (1 - similarity)\n"
-                f"- Dendrogram mapped onto concentric circles\n"
-                f"- Explicit hierarchy lines (radial + arcs)",
+            # Scale circles to fit min/max radius range
+            # Original circles are in radius units
+            original_min = min(acc2_data["circles"])
+            original_max = max(acc2_data["circles"])
+            original_range = original_max - original_min
+
+            if original_range > 0:
+                # Scale circles (radii)
+                new_range = max_radius - min_radius
+                scaled_circles = []
+                for r in acc2_data["circles"]:
+                    scaled_r = min_radius + (r - original_min) / original_range * new_range
+                    scaled_circles.append(scaled_r)
+                acc2_data["circles"] = scaled_circles
+
+                # Scale merge point radii
+                for cluster_id, mp in acc2_data["merge_points"].items():
+                    old_r = mp["radius"]
+                    new_r = min_radius + (old_r - original_min) / original_range * new_range
+                    acc2_data["merge_points"][cluster_id]["radius"] = new_r
+
+                # Scale level radii
+                for level in acc2_data["levels"]:
+                    old_r = level["radius"]
+                    new_r = min_radius + (old_r - original_min) / original_range * new_range
+                    level["radius"] = new_r
+
+            # Visualize ACC2 in the ACC2 tab
+            # ACC1 style will be applied inside plot_acc2
+            self.right_panel.acc2_widget.plot_acc2(acc2_data, acc1_style=acc1_style)
+
+            # No message box - just silently complete
+            print(
+                f"[ACC2] Generated: {len(acc2_data['positions'])} areas, diameter range: {min_diameter:.1f}-{max_diameter:.1f}"
             )
 
         except Exception as e:

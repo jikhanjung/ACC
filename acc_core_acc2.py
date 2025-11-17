@@ -9,14 +9,14 @@ Key differences from ACC1:
 3. Explicit hierarchy lines: radial lines + arcs
 """
 
-import math
 import numpy as np
-from acc_core_new import build_acc_iterative, cart2pol, pol2cart
 
+from acc_core_new import build_acc_iterative, cart2pol
 
 # ------------------------------------------------------------
 # Phase 1: Dendrogram Analysis and Concentric Circle Creation
 # ------------------------------------------------------------
+
 
 def analyze_dendrogram_levels(sub_matrix, inc_matrix):
     """
@@ -43,7 +43,7 @@ def analyze_dendrogram_levels(sub_matrix, inc_matrix):
     """
     # Initialize clusters (each area is a cluster)
     all_areas = set(sub_matrix.keys())
-    clusters = {area: {'members': {area}, 'level': 0} for area in all_areas}
+    clusters = {area: {"members": {area}, "level": 0} for area in all_areas}
 
     levels = []
     level = 1
@@ -76,11 +76,11 @@ def analyze_dendrogram_levels(sub_matrix, inc_matrix):
 
         cluster_ids = list(clusters.keys())
         for i in range(len(cluster_ids)):
-            for j in range(i+1, len(cluster_ids)):
+            for j in range(i + 1, len(cluster_ids)):
                 c1_id = cluster_ids[i]
                 c2_id = cluster_ids[j]
-                c1_members = clusters[c1_id]['members']
-                c2_members = clusters[c2_id]['members']
+                c1_members = clusters[c1_id]["members"]
+                c2_members = clusters[c2_id]["members"]
 
                 sim = linkage_similarity(matrix, c1_members, c2_members)
 
@@ -96,8 +96,8 @@ def analyze_dendrogram_levels(sub_matrix, inc_matrix):
         c1_id, c2_id, sub_sim = find_best_merge(clusters, sub_matrix)
 
         # Calculate inclusive similarity for this merge
-        c1_members = clusters[c1_id]['members']
-        c2_members = clusters[c2_id]['members']
+        c1_members = clusters[c1_id]["members"]
+        c2_members = clusters[c2_id]["members"]
         inc_sim = linkage_similarity(inc_matrix, c1_members, c2_members)
 
         # Create merged cluster ID and members
@@ -109,15 +109,15 @@ def analyze_dendrogram_levels(sub_matrix, inc_matrix):
 
         # Store level info
         level_info = {
-            'level': level,
-            'cluster1': c1_id,
-            'cluster2': c2_id,
-            'members': sorted(merged_members),
-            'structure': [c1_id, c2_id],
-            'sub_sim': sub_sim,
-            'inc_sim': inc_sim,
-            'diameter': diameter,
-            'radius': radius
+            "level": level,
+            "cluster1": c1_id,
+            "cluster2": c2_id,
+            "members": sorted(merged_members),
+            "structure": [c1_id, c2_id],
+            "sub_sim": sub_sim,
+            "inc_sim": inc_sim,
+            "diameter": diameter,
+            "radius": radius,
         }
         levels.append(level_info)
 
@@ -127,10 +127,7 @@ def analyze_dendrogram_levels(sub_matrix, inc_matrix):
         # Update clusters
         del clusters[c1_id]
         del clusters[c2_id]
-        clusters[merged_id] = {
-            'members': merged_members,
-            'level': level
-        }
+        clusters[merged_id] = {"members": merged_members, "level": level}
 
         level += 1
 
@@ -140,6 +137,7 @@ def analyze_dendrogram_levels(sub_matrix, inc_matrix):
 # ------------------------------------------------------------
 # Phase 2: Area Final Angle Calculation (Reuse ACC1)
 # ------------------------------------------------------------
+
 
 def calculate_final_positions(sub_matrix, inc_matrix, unit=1.0):
     """
@@ -161,21 +159,16 @@ def calculate_final_positions(sub_matrix, inc_matrix, unit=1.0):
 
     # Get final step
     final_step = acc1_steps[-1]
-    final_cluster = final_step['clusters'][0]
+    final_cluster = final_step["clusters"][0]
 
     # Extract positions and calculate angles
     positions = {}
-    for member, (x, y) in final_cluster['points'].items():
+    for member, (x, y) in final_cluster["points"].items():
         # Calculate angle using cart2pol
         _, angle = cart2pol(x, y)
 
         # For ACC2, all areas are at r=0.5
-        positions[member] = {
-            'x': x,
-            'y': y,
-            'radius': 0.5,
-            'angle': angle
-        }
+        positions[member] = {"x": x, "y": y, "radius": 0.5, "angle": angle}
 
     return positions
 
@@ -183,6 +176,7 @@ def calculate_final_positions(sub_matrix, inc_matrix, unit=1.0):
 # ------------------------------------------------------------
 # Phase 3: Merge Point Position Calculation
 # ------------------------------------------------------------
+
 
 def calculate_merge_points(levels, final_positions):
     """
@@ -208,22 +202,21 @@ def calculate_merge_points(levels, final_positions):
     merge_points = {}
 
     for level_info in levels:
-        cluster1 = level_info['cluster1']
-        cluster2 = level_info['cluster2']
-        merge_radius = level_info['radius']
-        level = level_info['level']
+        cluster1 = level_info["cluster1"]
+        cluster2 = level_info["cluster2"]
+        merge_radius = level_info["radius"]
+        level = level_info["level"]
 
         # Get angles of children
         # Child can be an area (in final_positions) or a cluster (in merge_points)
         def get_child_angle(child_id):
             if child_id in final_positions:
                 # It's an area
-                return final_positions[child_id]['angle']
-            elif child_id in merge_points:
+                return final_positions[child_id]["angle"]
+            if child_id in merge_points:
                 # It's a cluster
-                return merge_points[child_id]['angle']
-            else:
-                raise ValueError(f"Child {child_id} not found in positions or merge_points")
+                return merge_points[child_id]["angle"]
+            raise ValueError(f"Child {child_id} not found in positions or merge_points")
 
         angle1 = get_child_angle(cluster1)
         angle2 = get_child_angle(cluster2)
@@ -235,10 +228,10 @@ def calculate_merge_points(levels, final_positions):
         cluster_id = f"[{cluster1}, {cluster2}]"
 
         merge_points[cluster_id] = {
-            'radius': merge_radius,
-            'angle': merge_angle,
-            'children': [cluster1, cluster2],
-            'level': level
+            "radius": merge_radius,
+            "angle": merge_angle,
+            "children": [cluster1, cluster2],
+            "level": level,
         }
 
     return merge_points
@@ -247,6 +240,7 @@ def calculate_merge_points(levels, final_positions):
 # ------------------------------------------------------------
 # Phase 4: Connection Line Generation
 # ------------------------------------------------------------
+
 
 def generate_connection_lines(levels, final_positions, merge_points):
     """
@@ -266,45 +260,37 @@ def generate_connection_lines(levels, final_positions, merge_points):
     lines = []
 
     for level_info in levels:
-        cluster1 = level_info['cluster1']
-        cluster2 = level_info['cluster2']
-        merge_radius = level_info['radius']
+        cluster1 = level_info["cluster1"]
+        cluster2 = level_info["cluster2"]
+        merge_radius = level_info["radius"]
 
         # Get child info (radius and angle)
         def get_child_info(child_id):
             if child_id in final_positions:
-                # It's an area at r=0.5
-                return (0.5, final_positions[child_id]['angle'])
-            elif child_id in merge_points:
+                # It's an area - use its actual radius (may not be 0.5 in ACC1 style)
+                pos = final_positions[child_id]
+                return (pos["radius"], pos["angle"])
+            if child_id in merge_points:
                 # It's a cluster at its merge radius
                 mp = merge_points[child_id]
-                return (mp['radius'], mp['angle'])
-            else:
-                raise ValueError(f"Child {child_id} not found")
+                return (mp["radius"], mp["angle"])
+            raise ValueError(f"Child {child_id} not found")
 
         r1, angle1 = get_child_info(cluster1)
         r2, angle2 = get_child_info(cluster2)
 
         # Radial line from child1 to merge radius
-        lines.append({
-            'type': 'radial',
-            'from': (r1, angle1),
-            'to': (merge_radius, angle1)
-        })
+        lines.append({"type": "radial", "from": (r1, angle1), "to": (merge_radius, angle1)})
 
         # Radial line from child2 to merge radius
-        lines.append({
-            'type': 'radial',
-            'from': (r2, angle2),
-            'to': (merge_radius, angle2)
-        })
+        lines.append({"type": "radial", "from": (r2, angle2), "to": (merge_radius, angle2)})
 
         # Arc connecting the two radial lines at merge radius
         lines.append({
-            'type': 'arc',
-            'radius': merge_radius,
-            'angle_start': min(angle1, angle2),
-            'angle_end': max(angle1, angle2)
+            "type": "arc",
+            "radius": merge_radius,
+            "angle_start": min(angle1, angle2),
+            "angle_end": max(angle1, angle2),
         })
 
     return lines
@@ -313,6 +299,7 @@ def generate_connection_lines(levels, final_positions, merge_points):
 # ------------------------------------------------------------
 # Main ACC2 Algorithm
 # ------------------------------------------------------------
+
 
 def build_acc2(sub_matrix, inc_matrix, unit=1.0):
     """
@@ -346,20 +333,21 @@ def build_acc2(sub_matrix, inc_matrix, unit=1.0):
     # Collect all circle radii
     circles = [0.5]  # Area circle (innermost)
     for level_info in levels:
-        circles.append(level_info['radius'])
+        circles.append(level_info["radius"])
 
     return {
-        'levels': levels,
-        'positions': positions,
-        'merge_points': merge_points,
-        'lines': lines,
-        'circles': sorted(set(circles))  # Unique, sorted
+        "levels": levels,
+        "positions": positions,
+        "merge_points": merge_points,
+        "lines": lines,
+        "circles": sorted(set(circles)),  # Unique, sorted
     }
 
 
 # ------------------------------------------------------------
 # Helper function for matrix conversion
 # ------------------------------------------------------------
+
 
 def dict_matrix_from_dataframe(df):
     """Convert pandas DataFrame to dict matrix"""
@@ -377,8 +365,8 @@ if __name__ == "__main__":
     import pandas as pd
 
     # Load sample data
-    sub_df = pd.read_csv('data/sample_subordinate.csv', index_col=0)
-    inc_df = pd.read_csv('data/sample_inclusive.csv', index_col=0)
+    sub_df = pd.read_csv("data/sample_subordinate.csv", index_col=0)
+    inc_df = pd.read_csv("data/sample_inclusive.csv", index_col=0)
 
     sub_matrix = dict_matrix_from_dataframe(sub_df)
     inc_matrix = dict_matrix_from_dataframe(inc_df)
@@ -398,19 +386,19 @@ if __name__ == "__main__":
     print("\n" + "=" * 70)
     print("Circles (radii)")
     print("=" * 70)
-    for i, r in enumerate(acc2_data['circles'], 1):
+    for i, r in enumerate(acc2_data["circles"], 1):
         print(f"Circle {i}: r = {r:.3f}")
 
     print("\n" + "=" * 70)
     print("Area Positions (all at r=0.5)")
     print("=" * 70)
-    for area, pos in sorted(acc2_data['positions'].items()):
+    for area, pos in sorted(acc2_data["positions"].items()):
         print(f"{area}: angle = {pos['angle']:.1f}°")
 
     print("\n" + "=" * 70)
     print("Merge Levels")
     print("=" * 70)
-    for level in acc2_data['levels']:
+    for level in acc2_data["levels"]:
         print(f"\nLevel {level['level']}: {level['cluster1']} + {level['cluster2']}")
         print(f"  Inc similarity: {level['inc_sim']:.3f}")
         print(f"  Diameter: {level['diameter']:.3f}")
