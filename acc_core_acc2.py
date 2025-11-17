@@ -11,7 +11,7 @@ Key differences from ACC1:
 
 import numpy as np
 
-from acc_core_new import build_acc_iterative, cart2pol
+from acc_core_new import build_acc_iterative, cart2pol, pol2cart
 
 # ------------------------------------------------------------
 # Phase 1: Dendrogram Analysis and Concentric Circle Creation
