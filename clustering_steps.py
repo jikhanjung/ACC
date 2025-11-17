@@ -4,7 +4,6 @@ Manages hierarchical clustering progression step-by-step
 """
 
 import numpy as np
-import pandas as pd
 from scipy.cluster.hierarchy import linkage
 from scipy.spatial.distance import squareform
 
@@ -32,7 +31,7 @@ class ClusteringStepManager:
         condensed_dist = squareform(distance_matrix, checks=False)
 
         # Perform hierarchical clustering
-        self.linkage_matrix = linkage(condensed_dist, method='average')
+        self.linkage_matrix = linkage(condensed_dist, method="average")
         self.max_sim = max_sim
 
         # Generate all steps
@@ -49,12 +48,12 @@ class ClusteringStepManager:
 
         # Step 0: original state
         steps.append({
-            'step_num': 0,
-            'matrix': self.original_similarity.copy(),
-            'labels': self.original_labels.copy(),
-            'merged_pair': None,
-            'distance': None,
-            'cluster_map': {i: [label] for i, label in enumerate(self.original_labels)}
+            "step_num": 0,
+            "matrix": self.original_similarity.copy(),
+            "labels": self.original_labels.copy(),
+            "merged_pair": None,
+            "distance": None,
+            "cluster_map": {i: [label] for i, label in enumerate(self.original_labels)},
         })
 
         # Track current clusters
@@ -91,24 +90,20 @@ class ClusteringStepManager:
 
             # Create merged matrix
             new_matrix, new_labels = self._merge_matrix(
-                current_matrix,
-                current_labels,
-                cluster_i,
-                cluster_j,
-                merged_cluster
+                current_matrix, current_labels, cluster_i, cluster_j, merged_cluster
             )
 
             # Convert distance back to similarity
             similarity_dist = self.max_sim - dist
 
             steps.append({
-                'step_num': step_num,
-                'matrix': new_matrix,
-                'labels': new_labels,
-                'merged_pair': (cluster_i, cluster_j),
-                'distance': dist,
-                'similarity': similarity_dist,
-                'cluster_map': new_cluster_map
+                "step_num": step_num,
+                "matrix": new_matrix,
+                "labels": new_labels,
+                "merged_pair": (cluster_i, cluster_j),
+                "distance": dist,
+                "similarity": similarity_dist,
+                "cluster_map": new_cluster_map,
             })
 
             # Update current state
@@ -120,7 +115,7 @@ class ClusteringStepManager:
 
     def _merge_matrix(self, matrix, labels, cluster_i, cluster_j, new_cluster):
         """
-        Merge two clusters in the matrix
+        Merge two clusters in the matrix (optimized version with vectorization)
         The merged cluster takes the position of the earlier cluster (smaller index)
 
         Args:
@@ -135,31 +130,24 @@ class ClusteringStepManager:
             new_labels: reduced labels
         """
         # Find indices of clusters to merge
-        idx_i = [i for i, label in enumerate(labels) if label in cluster_i or str(label) == str(cluster_i)]
-        idx_j = [j for j, label in enumerate(labels) if label in cluster_j or str(label) == str(cluster_j)]
+        idx_i = None
+        idx_j = None
 
-        # Handle cases where cluster_i or cluster_j are already merged (represented as tuples/lists)
-        if not idx_i:
-            # cluster_i might be represented as a tuple in labels
-            for i, label in enumerate(labels):
-                if isinstance(label, (list, tuple)):
-                    if set(label) == set(cluster_i):
-                        idx_i = [i]
-                        break
+        for i, label in enumerate(labels):
+            if label in cluster_i or str(label) == str(cluster_i):
+                idx_i = i
+            elif label in cluster_j or str(label) == str(cluster_j):
+                idx_j = i
+            # Check for tuples/lists
+            elif isinstance(label, (list, tuple)):
+                if set(label) == set(cluster_i):
+                    idx_i = i
+                elif set(label) == set(cluster_j):
+                    idx_j = i
 
-        if not idx_j:
-            for j, label in enumerate(labels):
-                if isinstance(label, (list, tuple)):
-                    if set(label) == set(cluster_j):
-                        idx_j = [j]
-                        break
-
-        if not idx_i or not idx_j:
+        if idx_i is None or idx_j is None:
             # Fallback: just return current matrix
             return matrix, labels
-
-        idx_i = idx_i[0]
-        idx_j = idx_j[0]
 
         # Ensure idx_i < idx_j (idx_i will be the position of merged cluster)
         if idx_i > idx_j:
@@ -167,64 +155,40 @@ class ClusteringStepManager:
 
         n = len(labels)
 
-        # Create new matrix (one dimension smaller)
-        new_size = n - 1
-        new_matrix = np.zeros((new_size, new_size))
+        # Create index mask to keep all rows/cols except idx_j
+        keep_mask = np.ones(n, dtype=bool)
+        keep_mask[idx_j] = False
 
-        # Create new labels with merged cluster at idx_i position
+        # Create new matrix using vectorized operations
+        # Step 1: Remove row and column idx_j
+        temp_matrix = matrix[keep_mask][:, keep_mask]
+
+        # Step 2: Update the merged row/column (at idx_i position, or idx_i-1 if idx_j < idx_i)
+        merged_idx = idx_i if idx_j > idx_i else idx_i - 1
+
+        # Average similarities: (row_i + row_j) / 2 and (col_i + col_j) / 2
+        # For the merged cluster row
+        temp_matrix[merged_idx, :] = (matrix[idx_i, keep_mask] + matrix[idx_j, keep_mask]) / 2.0
+        # For the merged cluster column
+        temp_matrix[:, merged_idx] = (matrix[keep_mask, idx_i] + matrix[keep_mask, idx_j]) / 2.0
+        # Diagonal is always 1.0
+        temp_matrix[merged_idx, merged_idx] = 1.0
+
+        # Create new labels
         new_labels = []
-        old_to_new_idx = {}
-        new_idx = 0
-
         for old_idx in range(n):
             if old_idx == idx_i:
                 # Merged cluster takes the position of idx_i
                 merged_label = tuple(sorted(new_cluster))
                 new_labels.append(merged_label)
-                old_to_new_idx[old_idx] = new_idx
-                new_idx += 1
             elif old_idx == idx_j:
                 # Skip idx_j (it's merged into idx_i)
                 continue
             else:
                 # Keep other labels in their relative positions
                 new_labels.append(labels[old_idx])
-                old_to_new_idx[old_idx] = new_idx
-                new_idx += 1
 
-        # Fill new matrix
-        merged_idx = old_to_new_idx[idx_i]  # Position of merged cluster
-
-        for old_i in range(n):
-            if old_i == idx_j:
-                continue  # Skip removed row
-
-            new_i = old_to_new_idx.get(old_i, merged_idx) if old_i == idx_i else old_to_new_idx[old_i]
-
-            for old_j in range(n):
-                if old_j == idx_j:
-                    continue  # Skip removed column
-
-                if old_i == idx_i and old_j == idx_i:
-                    # Diagonal for merged cluster
-                    new_matrix[merged_idx, merged_idx] = 1.0
-                elif old_i == idx_i:
-                    # Row for merged cluster: average with idx_j
-                    new_j = old_to_new_idx.get(old_j, merged_idx) if old_j == idx_i else old_to_new_idx[old_j]
-                    avg_sim = (matrix[idx_i, old_j] + matrix[idx_j, old_j]) / 2.0
-                    new_matrix[merged_idx, new_j] = avg_sim
-                elif old_j == idx_i:
-                    # Column for merged cluster: average with idx_j
-                    new_i_actual = old_to_new_idx[old_i]
-                    avg_sim = (matrix[old_i, idx_i] + matrix[old_i, idx_j]) / 2.0
-                    new_matrix[new_i_actual, merged_idx] = avg_sim
-                else:
-                    # Other cells: copy directly
-                    new_i_actual = old_to_new_idx[old_i]
-                    new_j = old_to_new_idx[old_j]
-                    new_matrix[new_i_actual, new_j] = matrix[old_i, old_j]
-
-        return new_matrix, new_labels
+        return temp_matrix, new_labels
 
     def get_step(self, step_num):
         """
@@ -261,10 +225,10 @@ class ClusteringStepManager:
         if step_num == 0:
             return f"Step 0: Original matrix ({self.n_items} items)"
 
-        merged_pair = step['merged_pair']
-        cluster_i_str = '+'.join(merged_pair[0])
-        cluster_j_str = '+'.join(merged_pair[1])
-        sim = step.get('similarity', 0)
+        merged_pair = step["merged_pair"]
+        cluster_i_str = "+".join(merged_pair[0])
+        cluster_j_str = "+".join(merged_pair[1])
+        sim = step.get("similarity", 0)
 
         return f"Step {step_num}: Merge ({cluster_i_str}) + ({cluster_j_str}), similarity={sim:.3f}"
 

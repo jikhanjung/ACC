@@ -638,6 +638,7 @@ class StepMatrixWidget(QWidget):
 
                 # Validate similarity matrix properties
                 valid, msg = validate_similarity_matrix(df.values)
+
                 if not valid:
                     QMessageBox.warning(
                         self,
@@ -838,6 +839,11 @@ class StepMatrixWidget(QWidget):
 
     def populate_table(self, matrix, labels):
         """Populate table widget with matrix data"""
+        # CRITICAL: Multiple optimizations for massive speedup
+        self.table.setUpdatesEnabled(False)
+        self.table.blockSignals(True)  # Block itemChanged signals during population
+        self.table.setSortingEnabled(False)  # Disable sorting
+
         self.table.clear()
 
         # Format labels for display
@@ -910,6 +916,10 @@ class StepMatrixWidget(QWidget):
                     item.setFlags(item.flags() & ~Qt.ItemIsEditable)
                     item.setToolTip("Lower triangle is mirrored from upper triangle (not shown)")
                     self.table.setItem(i, j, item)
+
+        # Re-enable everything before resizing (resizing needs updates enabled)
+        self.table.blockSignals(False)
+        self.table.setUpdatesEnabled(True)
 
         # Adjust column widths
         self.table.resizeColumnsToContents()
@@ -2615,8 +2625,8 @@ class MainWindow(QMainWindow):
         splitter.addWidget(center_scroll)
         splitter.addWidget(right_scroll)
 
-        # Set initial sizes (equal width)
-        splitter.setSizes([600, 600, 600])
+        # Set initial sizes (left: 550, center: 550, right: 700)
+        splitter.setSizes([550, 550, 700])
 
         # Set central widget
         self.setCentralWidget(splitter)
