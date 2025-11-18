@@ -1958,6 +1958,10 @@ class ACCVisualizationWidget(QWidget):
                 ax.plot([x1, x2], [y1, y2], "k-", linewidth=2, alpha=0.8)
 
         # Step 3: Draw areas at r=0.5
+        # Calculate label offset based on max radius for proper scaling
+        max_radius = max(circles) if circles else 1.0
+        label_offset = max_radius * 0.08  # Scale offset proportionally to chart size
+
         for area, pos in positions.items():
             angle = pos["angle"]
             radius = pos["radius"]
@@ -1968,8 +1972,8 @@ class ACCVisualizationWidget(QWidget):
             # Draw area point
             ax.scatter(x, y, c="darkblue", s=200, zorder=10, edgecolors="black", linewidth=2)
 
-            # Label area
-            label_r = radius - 0.1
+            # Label area with dynamic offset based on max radius
+            label_r = radius - label_offset
             label_x, label_y = pol2cart(label_r, angle)
             ax.text(label_x, label_y, area, fontsize=14, ha="center", va="center", fontweight="bold", color="darkblue")
 
@@ -2505,22 +2509,10 @@ class RightPanel(ColumnPanel):
         self.acc2_acc1_style.setToolTip("Place areas on their first merge circle instead of innermost circle")
         options_layout.addWidget(self.acc2_acc1_style)
 
-        # Apply button
-        apply_btn = QPushButton("Apply")
-        apply_btn.setFixedWidth(80)
-        apply_btn.setStyleSheet("""
-            QPushButton {
-                background-color: #4CAF50;
-                color: white;
-                padding: 4px 8px;
-                border-radius: 3px;
-            }
-            QPushButton:hover {
-                background-color: #45a049;
-            }
-        """)
-        apply_btn.clicked.connect(self.on_acc2_options_apply)
-        options_layout.addWidget(apply_btn)
+        # Connect signals for real-time updates
+        self.acc2_min_diameter.editingFinished.connect(self.on_acc2_options_changed)
+        self.acc2_max_diameter.editingFinished.connect(self.on_acc2_options_changed)
+        self.acc2_acc1_style.stateChanged.connect(self.on_acc2_options_changed)
 
         options_layout.addStretch()
 
@@ -2563,10 +2555,16 @@ class RightPanel(ColumnPanel):
         if isinstance(main_window, MainWindow):
             main_window.show_acc_log()
 
-    def on_acc2_options_apply(self):
-        """Handle ACC2 options apply button click"""
+    def on_acc2_options_changed(self):
+        """Handle ACC2 options change - update visualization in real-time"""
         main_window = self.window()
         if isinstance(main_window, MainWindow):
+            # Only update if matrices are loaded
+            if not main_window.left_panel.sub_matrix_widget.is_loaded():
+                return
+            if not main_window.left_panel.inc_matrix_widget.is_loaded():
+                return
+
             # Validate inputs
             try:
                 min_diameter = float(self.acc2_min_diameter.text())
@@ -2574,18 +2572,16 @@ class RightPanel(ColumnPanel):
                 acc1_style = self.acc2_acc1_style.isChecked()
 
                 if min_diameter <= 0 or max_diameter <= 0:
-                    QMessageBox.warning(self, "Invalid Input", "Diameters must be positive values")
-                    return
+                    return  # Silently ignore invalid values during real-time updates
 
                 if min_diameter >= max_diameter:
-                    QMessageBox.warning(self, "Invalid Input", "Min diameter must be less than max diameter")
-                    return
+                    return  # Silently ignore invalid values during real-time updates
 
                 # Regenerate ACC2 with new parameters
                 main_window.generate_acc2_with_options(min_diameter, max_diameter, acc1_style)
 
             except ValueError:
-                QMessageBox.warning(self, "Invalid Input", "Please enter valid numeric values for diameters")
+                pass  # Silently ignore invalid values during real-time updates
 
 
 class MainWindow(QMainWindow):
@@ -2805,6 +2801,9 @@ class MainWindow(QMainWindow):
             # Build ACC2 with default parameters
             acc2_data = build_acc2(sub_matrix, inc_matrix, unit=1.0)
 
+            # Store ACC2 data for future option updates
+            self.acc2_data = acc2_data
+
             # Convert diameter inputs to radius (circles are stored as radii)
             min_radius = min_diameter / 2.0
             max_radius = max_diameter / 2.0
@@ -2835,6 +2834,17 @@ class MainWindow(QMainWindow):
                     old_r = level["radius"]
                     new_r = min_radius + (old_r - original_min) / original_range * new_range
                     level["radius"] = new_r
+
+                # Scale area positions (all areas at innermost circle)
+                for area, pos in acc2_data["positions"].items():
+                    old_r = pos["radius"]
+                    new_r = min_radius + (old_r - original_min) / original_range * new_range
+                    # Update radius
+                    acc2_data["positions"][area]["radius"] = new_r
+                    # Recalculate x, y from new radius and existing angle
+                    new_x, new_y = pol2cart(new_r, pos["angle"])
+                    acc2_data["positions"][area]["x"] = new_x
+                    acc2_data["positions"][area]["y"] = new_y
 
             # Visualize ACC2 in the ACC2 tab
             # ACC1 style will be applied inside plot_acc2
