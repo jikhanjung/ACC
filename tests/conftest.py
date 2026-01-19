@@ -18,44 +18,44 @@ def test_data_dir():
 
 
 @pytest.fixture
-def sample_sub_df(test_data_dir):
-    """샘플 subordinate DataFrame (6-영역)"""
-    return pd.read_csv(test_data_dir / "sample_subordinate.csv", index_col=0)
+def sample_local_df(test_data_dir):
+    """샘플 local DataFrame (6-영역)"""
+    return pd.read_csv(test_data_dir / "sample_local.csv", index_col=0)
 
 
 @pytest.fixture
-def sample_inc_df(test_data_dir):
-    """샘플 inclusive DataFrame (6-영역)"""
-    return pd.read_csv(test_data_dir / "sample_inclusive.csv", index_col=0)
+def sample_global_df(test_data_dir):
+    """샘플 global DataFrame (6-영역)"""
+    return pd.read_csv(test_data_dir / "sample_global.csv", index_col=0)
 
 
 @pytest.fixture
-def sample_sub_matrix(sample_sub_df):
-    """샘플 subordinate matrix (dict 형식)"""
+def sample_local_matrix(sample_local_df):
+    """샘플 local matrix (dict 형식)"""
     result = {}
-    for idx in sample_sub_df.index:
+    for idx in sample_local_df.index:
         result[idx] = {}
-        for col in sample_sub_df.columns:
+        for col in sample_local_df.columns:
             if idx != col:
-                result[idx][col] = float(sample_sub_df.loc[idx, col])
+                result[idx][col] = float(sample_local_df.loc[idx, col])
     return result
 
 
 @pytest.fixture
-def sample_inc_matrix(sample_inc_df):
-    """샘플 inclusive matrix (dict 형식)"""
+def sample_global_matrix(sample_global_df):
+    """샘플 global matrix (dict 형식)"""
     result = {}
-    for idx in sample_inc_df.index:
+    for idx in sample_global_df.index:
         result[idx] = {}
-        for col in sample_inc_df.columns:
+        for col in sample_global_df.columns:
             if idx != col:
-                result[idx][col] = float(sample_inc_df.loc[idx, col])
+                result[idx][col] = float(sample_global_df.loc[idx, col])
     return result
 
 
 @pytest.fixture
-def simple_abc_sub_matrix():
-    """간단한 3-영역 subordinate matrix"""
+def simple_abc_local_matrix():
+    """간단한 3-영역 local matrix"""
     return {
         "A": {"B": 0.9, "C": 0.5},
         "B": {"A": 0.9, "C": 0.5},
@@ -64,8 +64,8 @@ def simple_abc_sub_matrix():
 
 
 @pytest.fixture
-def simple_abc_inc_matrix():
-    """간단한 3-영역 inclusive matrix"""
+def simple_abc_global_matrix():
+    """간단한 3-영역 global matrix"""
     return {
         "A": {"B": 0.8, "C": 0.4},
         "B": {"A": 0.8, "C": 0.4},

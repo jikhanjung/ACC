@@ -35,7 +35,7 @@ ACC2 알고리즘
 
 * ACC1 area 색상을 동심원 색상과 일치
 * 무지개 colormap 적용
-* 각 area가 속한 inc_sim 레벨을 색상으로 표시
+* 각 area가 속한 global_sim 레벨을 색상으로 표시
 
 데이터 검증
 ~~~~~~~~~~~
@@ -65,7 +65,7 @@ Version 1.0 (2025-11-13)
 * CSV matrix 입력 지원
 * Dendrogram 단계별 시각화
 * 동심원 기반 ACC 시각화
-* Subordinate/Inclusive similarity 통합
+* Local/Global similarity 통합
 * Matrix 편집 기능
 * 기본 이미지 저장 기능
 

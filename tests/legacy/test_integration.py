@@ -15,33 +15,33 @@ def test_sample_data():
 
     # Load sample data
     print("\n1. Loading sample data...")
-    sub_df = pd.read_csv("data/sample_subordinate.csv", index_col=0)
-    inc_df = pd.read_csv("data/sample_inclusive.csv", index_col=0)
-    print(f"   Subordinate matrix: {sub_df.shape}")
-    print(f"   Inclusive matrix: {inc_df.shape}")
+    local_df = pd.read_csv("data/sample_local.csv", index_col=0)
+    global_df = pd.read_csv("data/sample_global.csv", index_col=0)
+    print(f"   Local matrix: {local_df.shape}")
+    print(f"   Global matrix: {global_df.shape}")
 
     # Convert to dict format
     print("\n2. Converting to dict format...")
-    sub_matrix = dict_matrix_from_dataframe(sub_df)
-    inc_matrix = dict_matrix_from_dataframe(inc_df)
+    local_matrix = dict_matrix_from_dataframe(local_df)
+    global_matrix = dict_matrix_from_dataframe(global_df)
 
     # Validate matrices
     print("\n3. Validating matrices...")
-    valid, msg = validate_similarity_matrix(sub_matrix)
-    print(f"   Subordinate: {msg}")
+    valid, msg = validate_similarity_matrix(local_matrix)
+    print(f"   Local: {msg}")
     if not valid:
         print("   ERROR: Validation failed!")
         return
 
-    valid, msg = validate_similarity_matrix(inc_matrix)
-    print(f"   Inclusive: {msg}")
+    valid, msg = validate_similarity_matrix(global_matrix)
+    print(f"   Global: {msg}")
     if not valid:
         print("   ERROR: Validation failed!")
         return
 
     # Run ACC algorithm (conversion happens inside)
     print("\n4. Running ACC algorithm (with automatic dendrogram conversion)...")
-    result = build_acc_from_matrices(sub_matrix, inc_matrix, unit=1.0, method='average')
+    result = build_acc_from_matrices(local_matrix, global_matrix, unit=1.0, method='average')
 
     # Display results (new structure with multiple clusters)
     print("\n5. Results:")

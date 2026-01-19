@@ -11,12 +11,12 @@ ACC 사용자 매뉴얼
 ----------
 
 ACC는 계층적 클러스터링 결과를 **동심원 기반 원형 다이어그램**으로 시각화하는 Python 애플리케이션입니다.
-두 종류의 유사도 정보(Subordinate와 Inclusive)를 결합하여 영역(area) 간의 친화도(affinity) 관계를 직관적으로 표현합니다.
+두 종류의 유사도 정보(Local와 Global)를 결합하여 영역(area) 간의 친화도(affinity) 관계를 직관적으로 표현합니다.
 
 주요 특징
 ----------
 
-* **이중 유사도 통합**: Subordinate와 Inclusive 유사도를 동시에 고려
+* **이중 유사도 통합**: Local와 Global 유사도를 동시에 고려
 * **대화형 시각화**: 단계별 클러스터링 과정 재생 가능
 * **동심원 표현**: 클러스터 계층을 동심원으로 직관적 표현
 * **인터랙티브 조정**: Branch swap으로 레이아웃 최적화
@@ -59,8 +59,8 @@ ACC는 계층적 클러스터링 결과를 **동심원 기반 원형 다이어�
 기본 사용법
 ~~~~~~~~~~~
 
-1. **Subordinate Matrix 로드**: CSV 파일 선택 → Dendrogram 자동 표시
-2. **Inclusive Matrix 로드**: CSV 파일 선택 → Dendrogram 자동 표시
+1. **Local Matrix 로드**: CSV 파일 선택 → Dendrogram 자동 표시
+2. **Global Matrix 로드**: CSV 파일 선택 → Dendrogram 자동 표시
 3. **ACC 생성**: "Generate ACC Visualization" 버튼 클릭 → 동심원 자동 표시
 
 자세한 내용은 :doc:`getting_started` 를 참조하세요.

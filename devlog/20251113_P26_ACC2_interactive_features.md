@@ -9,24 +9,24 @@ ACC2 visualization에 interactive 기능들을 추가하고, dendrogram 단계�
 ### 1. ACC2 동심원 라벨 개선
 
 **변경 사항:**
-- 동심원 라벨을 반지름(r) 값에서 **inclusive similarity** 값으로 변경
+- 동심원 라벨을 반지름(r) 값에서 **global similarity** 값으로 변경
 - 가장 안쪽 원(r=0.5)은 "Areas"로 표시
 
 **이유:**
-- ACC2의 공식이 `diameter = 1 + (1 - inc_sim)`이므로 radius 값보다 similarity 값이 더 직관적
+- ACC2의 공식이 `diameter = 1 + (1 - global_sim)`이므로 radius 값보다 similarity 값이 더 직관적
 - 사용자가 실제 similarity 값을 바로 확인 가능
 
 **구현:**
 - `visualize_acc2.py`: `visualize_acc2()` 함수 수정
 - `acc_gui.py`: `ACCVisualizationWidget.plot_acc2()` 메서드 수정
-- `radius_to_sim` 매핑 생성하여 각 radius에 해당하는 inc_sim 값 저장
+- `radius_to_sim` 매핑 생성하여 각 radius에 해당하는 global_sim 값 저장
 
 **결과:**
 ```
 보라색 원: "Areas"
-파란색 원: "inc_sim=0.880"
-하늘색 원: "inc_sim=0.830"
-초록색 원: "inc_sim=0.810"
+파란색 원: "global_sim=0.880"
+하늘색 원: "global_sim=0.830"
+초록색 원: "global_sim=0.810"
 ...
 ```
 
@@ -39,7 +39,7 @@ ACC2 visualization에 interactive 기능들을 추가하고, dendrogram 단계�
 - 표시 정보:
   - Cluster ID (예: `[J, T]`)
   - Angle (각도)
-  - Subordinate similarity
+  - Local similarity
 
 **구현:**
 - matplotlib의 `annotate()` 사용
@@ -108,7 +108,7 @@ ACC2 visualization에 interactive 기능들을 추가하고, dendrogram 단계�
 - 중간 단계: 모든 버튼 활성화
 
 **적용 위치:**
-1. `StepMatrixWidget` (Subordinate/Inclusive similarity matrix 단계별 보기)
+1. `StepMatrixWidget` (Local/Global similarity matrix 단계별 보기)
 2. `ACCVisualizationWidget` (ACC visualization 단계별 보기)
 
 **코드 위치:**
@@ -158,7 +158,7 @@ ACC2 visualization에 interactive 기능들을 추가하고, dendrogram 단계�
    - Import 추가: `calculate_merge_points`, `generate_connection_lines`
 
 2. `visualize_acc2.py`:
-   - Inclusive similarity 라벨 표시
+   - Global similarity 라벨 표시
    - Hover annotation
    - Interactive features
 
@@ -168,13 +168,13 @@ ACC2 visualization에 interactive 기능들을 추가하고, dendrogram 단계�
 
 ### ACC2 Interactive Exploration
 1. "Generate ACC2" 버튼 클릭
-2. 동심원의 라벨에서 inclusive similarity 값 확인
+2. 동심원의 라벨에서 global similarity 값 확인
 3. 빨간색 merge point에 마우스 올려서 상세 정보 확인
 4. 원하는 merge point 클릭하여 branch swap
 5. 여러 merge point를 조합하여 최적의 layout 생성
 
 ### Dendrogram Step-by-Step Navigation
-1. Subordinate/Inclusive matrix 로드
+1. Local/Global matrix 로드
 2. 단계별 슬라이더 활성화
 3. `⏮` 버튼으로 첫 단계로 이동
 4. `▶` 버튼으로 천천히 clustering 과정 관찰
@@ -205,11 +205,11 @@ lines = generate_connection_lines(levels, positions, merge_points)
 ### Hover Detection
 ```python
 # 가장 가까운 merge point 찾기
-for x, y, angle, sub_sim, cluster_id in merge_point_data:
+for x, y, angle, local_sim, cluster_id in merge_point_data:
     dist = ((event.xdata - x)**2 + (event.ydata - y)**2)**0.5
     if dist < min_dist:
         min_dist = dist
-        closest_point = (x, y, angle, sub_sim, cluster_id)
+        closest_point = (x, y, angle, local_sim, cluster_id)
 
 # Threshold 기반 표시 여부 결정
 threshold = lim * 0.05  # 5% of axis limit
@@ -235,12 +235,12 @@ if min_dist < threshold:
 
 ## 테스트 결과
 
-✅ ACC2 동심원 라벨에 inclusive similarity 표시
+✅ ACC2 동심원 라벨에 global similarity 표시
 ✅ Merge point hover 시 정보 표시
 ✅ Merge point 클릭 시 branch swap 작동
 ✅ Navigation 버튼(⏮, ⏭) 정상 작동
 ✅ 마지막 단계에서 원본 매트릭스 복구
-✅ Subordinate/Inclusive matrix 양쪽에서 모두 작동
+✅ Local/Global matrix 양쪽에서 모두 작동
 ✅ ACC visualization에서도 navigation 버튼 작동
 
 ---

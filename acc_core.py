@@ -25,7 +25,7 @@ class DendroNode:
 # ------------------------------------------------------------
 def extract_clusters_from_dendro(root: DendroNode):
     """
-    덴드로그램 전체를 순회하며 (멤버집합, sim_sub) 쌍을 모은다.
+    덴드로그램 전체를 순회하며 (멤버집합, sim_local) 쌍을 모은다.
     리프도 포함한다.
     """
     clusters = []
@@ -35,9 +35,9 @@ def extract_clusters_from_dendro(root: DendroNode):
             return
         clusters.append({
             "members": set(node.members),
-            "sim_sub": node.sim,
+            "sim_local": node.sim,
             # 이하 필드는 나중에 채움
-            "sim_inc": None,
+            "sim_global": None,
             "diameter": None,
             "theta": None,
             "center": None,
@@ -52,11 +52,11 @@ def extract_clusters_from_dendro(root: DendroNode):
 
 
 # ------------------------------------------------------------
-# 3. 포괄(inclusive) 덴드로그램에서 똑같은 멤버셋 찾기
+# 3. 포괄(global) 덴드로그램에서 똑같은 멤버셋 찾기
 # ------------------------------------------------------------
 def find_cluster_in_dendro_by_members(root: DendroNode, target_members: set):
     """
-    inclusive 덴드로그램에 똑같은 멤버 구성의 클러스터가 있으면 그 sim을 돌려준다.
+    global 덴드로그램에 똑같은 멤버 구성의 클러스터가 있으면 그 sim을 돌려준다.
     없으면 None
     """
     found = None
@@ -76,19 +76,19 @@ def find_cluster_in_dendro_by_members(root: DendroNode, target_members: set):
 
 
 # ------------------------------------------------------------
-# 4. 포괄 유사도 행렬에서 쌍별 평균으로 sim_inc 만들기
+# 4. 포괄 유사도 행렬에서 쌍별 평균으로 sim_global 만들기
 # ------------------------------------------------------------
-def average_pairwise_similarity(members: set, inc_matrix: dict):
+def average_pairwise_similarity(members: set, global_matrix: dict):
     """
     members = {"J","T","Y"} 같은 집합
-    inc_matrix = {("J","T"): 0.8, ("T","J"):0.8, ...} 혹은 중첩 dict
+    global_matrix = {("J","T"): 0.8, ("T","J"):0.8, ...} 혹은 중첩 dict
     여기서는 중첩 dict 버전으로 가정:
-      inc_matrix[a][b] = similarity
+      global_matrix[a][b] = similarity
     """
     ms = list(members)
     if len(ms) == 1:
         # 한 개만 있으면 자기 자신이니까 1로 잡아도 되고,
-        # inclusive에서 못 찾았으면 1로 치자.
+        # global에서 못 찾았으면 1로 치자.
         return 1.0
 
     total = 0.0
@@ -96,10 +96,10 @@ def average_pairwise_similarity(members: set, inc_matrix: dict):
     for a, b in combinations(ms, 2):
         # 양방향 중 하나만 있다고 가정
         s = None
-        if a in inc_matrix and b in inc_matrix[a]:
-            s = inc_matrix[a][b]
-        elif b in inc_matrix and a in inc_matrix[b]:
-            s = inc_matrix[b][a]
+        if a in global_matrix and b in global_matrix[a]:
+            s = global_matrix[a][b]
+        elif b in global_matrix and a in global_matrix[b]:
+            s = global_matrix[b][a]
         else:
             # 없으면 0으로
             s = 0.0
@@ -109,33 +109,33 @@ def average_pairwise_similarity(members: set, inc_matrix: dict):
 
 
 # ------------------------------------------------------------
-# 5. 각 클러스터에 두 번째 점수(sim_inc), 도형 값(d, theta) 붙이기
+# 5. 각 클러스터에 두 번째 점수(sim_global), 도형 값(d, theta) 붙이기
 # ------------------------------------------------------------
-def decorate_clusters(clusters, inc_dendro: DendroNode, inc_matrix: dict, unit=1.0):
+def decorate_clusters(clusters, global_dendro: DendroNode, global_matrix: dict, unit=1.0):
     """
     clusters: extract_clusters_from_dendro 로 뽑은 리스트
-    inc_dendro: 포괄 덴드로그램
-    inc_matrix: 포괄 유사도 행렬 (중첩 dict)
+    global_dendro: 포괄 덴드로그램
+    global_matrix: 포괄 유사도 행렬 (중첩 dict)
     unit: 지름 계산할 때 쓸 상수
     """
     for c in clusters:
         members = c["members"]
-        # 1) inclusive 덴드로그램에서 찾기
-        inc_sim = find_cluster_in_dendro_by_members(inc_dendro, members)
-        if inc_sim is None:
+        # 1) global 덴드로그램에서 찾기
+        global_sim = find_cluster_in_dendro_by_members(global_dendro, members)
+        if global_sim is None:
             # 2) 없으면 행렬에서 평균
-            inc_sim = average_pairwise_similarity(members, inc_matrix)
+            global_sim = average_pairwise_similarity(members, global_matrix)
 
-        c["sim_inc"] = inc_sim
+        c["sim_global"] = global_sim
 
-        # 지름 d = unit / sim_inc  (sim_inc=0이면 너무 커지니 보정)
-        if inc_sim <= 0:
+        # 지름 d = unit / sim_global  (sim_global=0이면 너무 커지니 보정)
+        if global_sim <= 0:
             d = unit * 1000  # 차라리 엄청 크게
         else:
-            d = unit / inc_sim
+            d = unit / global_sim
 
         c["diameter"] = d
-        c["theta"] = 180.0 * (1.0 - c["sim_sub"])  # 서술한 공식
+        c["theta"] = 180.0 * (1.0 - c["sim_local"])  # 서술한 공식
 
 
 # ------------------------------------------------------------
@@ -203,11 +203,11 @@ def place_first_cluster(c):
 # ------------------------------------------------------------
 # 8. 클러스터 안에 점 하나 더 붙이는 케이스
 # ------------------------------------------------------------
-def add_area_to_cluster(base, new_cluster, inc_matrix):
+def add_area_to_cluster(base, new_cluster, global_matrix):
     """
     base: 이미 그려진 클러스터(dict)
     new_cluster: members가 기존 base보다 1개 더 많다고 가정
-    inc_matrix: 어느 쪽에 붙일지 판단할 때 사용
+    global_matrix: 어느 쪽에 붙일지 판단할 때 사용
     """
     base_members = base["members"]
     new_members = new_cluster["members"]
@@ -235,10 +235,10 @@ def add_area_to_cluster(base, new_cluster, inc_matrix):
     best_s = -1.0
     for m in base_members:
         s = 0.0
-        if m in inc_matrix and new_point in inc_matrix[m]:
-            s = inc_matrix[m][new_point]
-        elif new_point in inc_matrix and m in inc_matrix[new_point]:
-            s = inc_matrix[new_point][m]
+        if m in global_matrix and new_point in global_matrix[m]:
+            s = global_matrix[m][new_point]
+        elif new_point in global_matrix and m in global_matrix[new_point]:
+            s = global_matrix[new_point][m]
         if s > best_s:
             best_s = s
             best_m = m
@@ -265,7 +265,7 @@ def add_area_to_cluster(base, new_cluster, inc_matrix):
 # ------------------------------------------------------------
 # 9. 클러스터 둘 합치는 케이스
 # ------------------------------------------------------------
-def merge_two_clusters(base, new_cluster, inc_matrix):
+def merge_two_clusters(base, new_cluster, global_matrix):
     """
     base: 이미 배치된 클러스터
     new_cluster: 아직 배치 안 된 다른 클러스터
@@ -300,10 +300,10 @@ def merge_two_clusters(base, new_cluster, inc_matrix):
     for m1 in base["members"]:
         for m2 in new_cluster["members"]:
             s = 0.0
-            if m1 in inc_matrix and m2 in inc_matrix[m1]:
-                s = inc_matrix[m1][m2]
-            elif m2 in inc_matrix and m1 in inc_matrix[m2]:
-                s = inc_matrix[m2][m1]
+            if m1 in global_matrix and m2 in global_matrix[m1]:
+                s = global_matrix[m1][m2]
+            elif m2 in global_matrix and m1 in global_matrix[m2]:
+                s = global_matrix[m2][m1]
             if s > best_s:
                 best_s = s
                 best_pair = (m1, m2)
@@ -343,8 +343,8 @@ def deep_copy_cluster(c):
     """Create a deep copy of cluster dict for step snapshots"""
     return {
         "members": set(c["members"]),
-        "sim_sub": c["sim_sub"],
-        "sim_inc": c["sim_inc"],
+        "sim_local": c["sim_local"],
+        "sim_global": c["sim_global"],
         "diameter": c["diameter"],
         "theta": c["theta"],
         "center": tuple(c["center"]) if c["center"] else None,
@@ -356,22 +356,22 @@ def deep_copy_cluster(c):
 # ------------------------------------------------------------
 # 11. 전체 ACC 빌더 (원본 - 단일 병합 버전)
 # ------------------------------------------------------------
-def build_acc_merged(sub_dendro: DendroNode,
-                     inc_dendro: DendroNode,
-                     inc_matrix: dict,
+def build_acc_merged(local_dendro: DendroNode,
+                     global_dendro: DendroNode,
+                     global_matrix: dict,
                      unit=1.0):
     """
     Build ACC result by merging all clusters into one
     This is the original implementation that returns a single merged result
     """
     # 1) 하위 덴드로그램에서 클러스터 뽑기
-    clusters = extract_clusters_from_dendro(sub_dendro)
+    clusters = extract_clusters_from_dendro(local_dendro)
 
-    # 2) 각 클러스터에 sim_inc, d, theta 부여
-    decorate_clusters(clusters, inc_dendro, inc_matrix, unit=unit)
+    # 2) 각 클러스터에 sim_global, d, theta 부여
+    decorate_clusters(clusters, global_dendro, global_matrix, unit=unit)
 
     # 3) 유사도 높은 순으로 정렬
-    clusters.sort(key=lambda c: c["sim_sub"], reverse=True)
+    clusters.sort(key=lambda c: c["sim_local"], reverse=True)
 
     # 4) 첫 클러스터 배치
     base = place_first_cluster(clusters[0])
@@ -380,9 +380,9 @@ def build_acc_merged(sub_dendro: DendroNode,
     for c in clusters[1:]:
         # "base 멤버보다 1개만 많으면" → add_area 케이스라고 간주
         if len(c["members"]) == len(base["members"]) + 1 and base["members"].issubset(c["members"]):
-            base = add_area_to_cluster(base, c, inc_matrix)
+            base = add_area_to_cluster(base, c, global_matrix)
         else:
-            base = merge_two_clusters(base, c, inc_matrix)
+            base = merge_two_clusters(base, c, global_matrix)
 
     return base
 
@@ -390,9 +390,9 @@ def build_acc_merged(sub_dendro: DendroNode,
 # ------------------------------------------------------------
 # 11. ACC 빌더 - 단계별 버전
 # ------------------------------------------------------------
-def build_acc_steps(sub_dendro: DendroNode,
-                   inc_dendro: DendroNode,
-                   inc_matrix: dict,
+def build_acc_steps(local_dendro: DendroNode,
+                   global_dendro: DendroNode,
+                   global_matrix: dict,
                    unit=1.0):
     """
     Build ACC step by step and return all intermediate states
@@ -409,13 +409,13 @@ def build_acc_steps(sub_dendro: DendroNode,
         }
     """
     # 1) 하위 덴드로그램에서 클러스터 뽑기
-    clusters = extract_clusters_from_dendro(sub_dendro)
+    clusters = extract_clusters_from_dendro(local_dendro)
 
-    # 2) 각 클러스터에 sim_inc, d, theta 부여
-    decorate_clusters(clusters, inc_dendro, inc_matrix, unit=unit)
+    # 2) 각 클러스터에 sim_global, d, theta 부여
+    decorate_clusters(clusters, global_dendro, global_matrix, unit=unit)
 
     # 3) 유사도 높은 순으로 정렬
-    clusters.sort(key=lambda c: c["sim_sub"], reverse=True)
+    clusters.sort(key=lambda c: c["sim_local"], reverse=True)
 
     steps = []
 
@@ -426,7 +426,7 @@ def build_acc_steps(sub_dendro: DendroNode,
         "action": "initial",
         "current_cluster": deep_copy_cluster(base),
         "new_cluster": None,
-        "description": f"Initial cluster with {len(base['members'])} members (sim_sub={base['sim_sub']:.3f})",
+        "description": f"Initial cluster with {len(base['members'])} members (sim_local={base['sim_local']:.3f})",
         "highlighted_members": set(base["members"])
     })
 
@@ -438,13 +438,13 @@ def build_acc_steps(sub_dendro: DendroNode,
         if len(c["members"]) == len(base["members"]) + 1 and base["members"].issubset(c["members"]):
             action = "add_area"
             new_members = c["members"] - base["members"]
-            base = add_area_to_cluster(base, c, inc_matrix)
-            description = f"Adding {new_members} to cluster (sim_sub={c['sim_sub']:.3f})"
+            base = add_area_to_cluster(base, c, global_matrix)
+            description = f"Adding {new_members} to cluster (sim_local={c['sim_local']:.3f})"
         else:
             action = "merge_clusters"
             new_members = c["members"] - base["members"]
-            base = merge_two_clusters(base, c, inc_matrix)
-            description = f"Merging cluster with {len(new_members)} new members (sim_sub={c['sim_sub']:.3f})"
+            base = merge_two_clusters(base, c, global_matrix)
+            description = f"Merging cluster with {len(new_members)} new members (sim_local={c['sim_local']:.3f})"
 
         # 현재 상태 저장
         steps.append({
@@ -462,9 +462,9 @@ def build_acc_steps(sub_dendro: DendroNode,
 # ------------------------------------------------------------
 # 12. 전체 ACC 빌더 (동심원 버전 - 사용하지 않음)
 # ------------------------------------------------------------
-def build_acc(sub_dendro: DendroNode,
-              inc_dendro: DendroNode,
-              inc_matrix: dict,
+def build_acc(local_dendro: DendroNode,
+              global_dendro: DendroNode,
+              global_matrix: dict,
               unit=1.0):
     """
     Build ACC result with multiple concentric circles
@@ -476,16 +476,16 @@ def build_acc(sub_dendro: DendroNode,
             - 'all_members': set of all members across all clusters
     """
     # 1) 하위 덴드로그램에서 클러스터 뽑기
-    clusters = extract_clusters_from_dendro(sub_dendro)
+    clusters = extract_clusters_from_dendro(local_dendro)
 
-    # 2) 각 클러스터에 sim_inc, d, theta 부여
-    decorate_clusters(clusters, inc_dendro, inc_matrix, unit=unit)
+    # 2) 각 클러스터에 sim_global, d, theta 부여
+    decorate_clusters(clusters, global_dendro, global_matrix, unit=unit)
 
     # 3) 단일 멤버 클러스터 제외 (2개 이상만)
     clusters = [c for c in clusters if len(c["members"]) >= 2]
 
     # 4) 유사도 높은 순으로 정렬
-    clusters.sort(key=lambda c: c["sim_sub"], reverse=True)
+    clusters.sort(key=lambda c: c["sim_local"], reverse=True)
 
     # 5) 각 클러스터를 독립적으로 배치
     positioned_clusters = []
@@ -508,25 +508,25 @@ def build_acc(sub_dendro: DendroNode,
 # 12. 사용 예시
 # ------------------------------------------------------------
 if __name__ == "__main__":
-    # 예시용 하위 덴드로그램 (subordinate)
+    # 예시용 하위 덴드로그램 (local)
     # (((J,T),Y),(N,(O,Q))) 이런 식이라고 치자
     jt = DendroNode(["J", "T"], sim=0.9)
     jty = DendroNode(["J", "T", "Y"], sim=0.8, left=jt, right=DendroNode(["Y"], sim=1.0))
     oq = DendroNode(["O", "Q"], sim=0.85)
     noq = DendroNode(["N", "O", "Q"], sim=0.75, left=DendroNode(["N"], sim=1.0), right=oq)
-    sub_root = DendroNode(["J", "T", "Y", "N", "O", "Q"], sim=0.6, left=jty, right=noq)
+    local_root = DendroNode(["J", "T", "Y", "N", "O", "Q"], sim=0.6, left=jty, right=noq)
 
-    # 예시용 포괄 덴드로그램 (inclusive) - 구조가 다를 수 있다
-    jt_inc = DendroNode(["J", "T"], sim=0.88)
-    jy_inc = DendroNode(["J", "Y"], sim=0.82)
-    jty_inc = DendroNode(["J", "T", "Y"], sim=0.78, left=jt_inc, right=jy_inc)
-    oq_inc = DendroNode(["O", "Q"], sim=0.83)
-    n_inc = DendroNode(["N"], sim=1.0)
-    noq_inc = DendroNode(["N", "O", "Q"], sim=0.7, left=n_inc, right=oq_inc)
-    inc_root = DendroNode(["J", "T", "Y", "N", "O", "Q"], sim=0.55, left=jty_inc, right=noq_inc)
+    # 예시용 포괄 덴드로그램 (global) - 구조가 다를 수 있다
+    jt_global = DendroNode(["J", "T"], sim=0.88)
+    jy_global = DendroNode(["J", "Y"], sim=0.82)
+    jty_global = DendroNode(["J", "T", "Y"], sim=0.78, left=jt_global, right=jy_global)
+    oq_global = DendroNode(["O", "Q"], sim=0.83)
+    n_global = DendroNode(["N"], sim=1.0)
+    noq_global = DendroNode(["N", "O", "Q"], sim=0.7, left=n_global, right=oq_global)
+    global_root = DendroNode(["J", "T", "Y", "N", "O", "Q"], sim=0.55, left=jty_global, right=noq_global)
 
     # 포괄 유사도 행렬 (실제로는 더 빽빽해야 함)
-    inc_matrix = {
+    global_matrix = {
         "J": {"T": 0.88, "Y": 0.82, "N": 0.4, "O": 0.35, "Q": 0.36},
         "T": {"J": 0.88, "Y": 0.80, "N": 0.38, "O": 0.33, "Q": 0.34},
         "Y": {"J": 0.82, "T": 0.80, "N": 0.37, "O": 0.32, "Q": 0.33},
@@ -535,7 +535,7 @@ if __name__ == "__main__":
         "Q": {"O": 0.83, "N": 0.68},
     }
 
-    acc_result = build_acc(sub_root, inc_root, inc_matrix, unit=1.0)
+    acc_result = build_acc(local_root, global_root, global_matrix, unit=1.0)
 
     # 결과 출력 (새로운 구조)
     print("ACC all members:", acc_result["all_members"])

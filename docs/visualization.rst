@@ -11,30 +11,30 @@ Diameter (지름)
 
 .. code-block:: text
 
-   d = 1 + (1 - sim_inc)
+   d = 1 + (1 - sim_global)
 
-* **sim_inc가 높을수록** → d가 작음 → **중심에 가까움**
-* **sim_inc가 낮을수록** → d가 큼 → **바깥쪽에 위치**
+* **sim_global가 높을수록** → d가 작음 → **중심에 가까움**
+* **sim_global가 낮을수록** → d가 큼 → **바깥쪽에 위치**
 
 예시:
 
-* sim_inc = 0.9 → d = 1.1 (중심 근처)
-* sim_inc = 0.5 → d = 1.5 (바깥쪽)
+* sim_global = 0.9 → d = 1.1 (중심 근처)
+* sim_global = 0.5 → d = 1.5 (바깥쪽)
 
 Angle (각도)
 ~~~~~~~~~~~~
 
 .. code-block:: text
 
-   θ = 180° × (1 - sim_sub)
+   θ = 180° × (1 - sim_local)
 
-* **sim_sub가 높을수록** → θ가 작음 → **가까운 각도**
-* **sim_sub가 낮을수록** → θ가 큼 → **먼 각도**
+* **sim_local가 높을수록** → θ가 작음 → **가까운 각도**
+* **sim_local가 낮을수록** → θ가 큼 → **먼 각도**
 
 예시:
 
-* sim_sub = 0.9 → θ = 18° (가까움)
-* sim_sub = 0.5 → θ = 90° (직각)
+* sim_local = 0.9 → θ = 18° (가까움)
+* sim_local = 0.5 → θ = 90° (직각)
 
 시각화 패턴 읽기
 ----------------
@@ -52,7 +52,7 @@ Angle (각도)
 
 * 작은 각도 차이
 * 동일한 원 위에 위치
-* 높은 subordinate similarity
+* 높은 local similarity
 
 **해석**: J, T, Y는 매우 유사한 그룹
 
@@ -92,14 +92,14 @@ Angle (각도)
 두 Similarity의 역할
 ---------------------
 
-Subordinate Similarity
+Local Similarity
 ~~~~~~~~~~~~~~~~~~~~~~~
 
 * **역할**: 같은 레벨 내에서의 상대적 위치 결정
 * **영향**: 각도 (angular position)
 * **해석**: "얼마나 가까운가?"
 
-Inclusive Similarity
+Global Similarity
 ~~~~~~~~~~~~~~~~~~~~
 
 * **역할**: 계층 레벨 결정
@@ -111,13 +111,13 @@ Inclusive Similarity
 
 영역 A, B:
 
-* sub_sim = 0.9 (높음) → 작은 각도 차이 → 가까이 위치
-* inc_sim = 0.5 (낮음) → 큰 반지름 → 바깥쪽 원
+* local_sim = 0.9 (높음) → 작은 각도 차이 → 가까이 위치
+* global_sim = 0.5 (낮음) → 큰 반지름 → 바깥쪽 원
 
 영역 C, D:
 
-* sub_sim = 0.5 (낮음) → 큰 각도 차이 → 멀리 위치
-* inc_sim = 0.9 (높음) → 작은 반지름 → 안쪽 원
+* local_sim = 0.5 (낮음) → 큰 각도 차이 → 멀리 위치
+* global_sim = 0.9 (높음) → 작은 반지름 → 안쪽 원
 
 시각화 해석 가이드
 ------------------
@@ -125,16 +125,16 @@ Inclusive Similarity
 동심원 읽기
 ~~~~~~~~~~~
 
-1. **가장 안쪽 원** (보라색): 가장 높은 inclusive similarity를 가진 영역들
-2. **중간 원들** (파란색~초록색): 중간 수준의 inclusive similarity
-3. **가장 바깥쪽 원** (빨간색): 가장 낮은 inclusive similarity
+1. **가장 안쪽 원** (보라색): 가장 높은 global similarity를 가진 영역들
+2. **중간 원들** (파란색~초록색): 중간 수준의 global similarity
+3. **가장 바깥쪽 원** (빨간색): 가장 낮은 global similarity
 
 각도 관계 읽기
 ~~~~~~~~~~~~~~
 
-1. **같은 원 위의 영역들**: 동일한 inclusive similarity level
-2. **각도가 가까운 영역들**: 높은 subordinate similarity (유사한 특성)
-3. **각도가 먼 영역들**: 낮은 subordinate similarity (다른 특성)
+1. **같은 원 위의 영역들**: 동일한 global similarity level
+2. **각도가 가까운 영역들**: 높은 local similarity (유사한 특성)
+3. **각도가 먼 영역들**: 낮은 local similarity (다른 특성)
 
 색상 코드 이해
 ~~~~~~~~~~~~~~
@@ -142,7 +142,7 @@ Inclusive Similarity
 **동심원 색상** (무지개 colormap):
 
 * 보라색 → 파란색 → 초록색 → 노란색 → 빨간색
-* 안쪽에서 바깥쪽으로 갈수록 inclusive similarity 감소
+* 안쪽에서 바깥쪽으로 갈수록 global similarity 감소
 
 **Area 점 색상** (ACC1):
 
@@ -164,20 +164,20 @@ Inclusive Similarity
 
 1. **J, T, Y 그룹**:
 
-   * 같은 안쪽 원에 위치 (높은 inc_sim)
-   * 서로 가까운 각도 (높은 sub_sim)
+   * 같은 안쪽 원에 위치 (높은 global_sim)
+   * 서로 가까운 각도 (높은 local_sim)
    * → 매우 유사한 그룹
 
 2. **N, O, Q 그룹**:
 
-   * 같은 바깥쪽 원에 위치 (낮은 inc_sim)
-   * 서로 가까운 각도 (높은 sub_sim)
+   * 같은 바깥쪽 원에 위치 (낮은 global_sim)
+   * 서로 가까운 각도 (높은 local_sim)
    * → 유사하지만 JTY와는 다른 그룹
 
 3. **두 그룹 간 관계**:
 
-   * 다른 동심원에 위치 (다른 inc_sim level)
-   * 큰 각도 차이 (낮은 sub_sim)
+   * 다른 동심원에 위치 (다른 global_sim level)
+   * 큰 각도 차이 (낮은 local_sim)
    * → 명확히 구분되는 두 클러스터
 
 다음 단계

@@ -27,7 +27,7 @@ Similarity matrix CSV는 다음 규칙을 따라야 합니다:
 3. **대각선**: 모든 값이 1.0
 4. **대칭성**: matrix[i][j] == matrix[j][i]
 5. **값 범위**: 0.0 ~ 1.0
-6. **라벨 일치**: Subordinate와 Inclusive matrix가 동일한 라벨 사용
+6. **라벨 일치**: Local와 Global matrix가 동일한 라벨 사용
 
 잘못된 예시
 ~~~~~~~~~~~
@@ -102,7 +102,7 @@ Python으로 생성
 
    # DataFrame 생성 및 저장
    df = pd.DataFrame(matrix, index=labels, columns=labels)
-   df.to_csv('subordinate.csv')
+   df.to_csv('local.csv')
 
 데이터 검증
 -----------
@@ -113,7 +113,7 @@ CSV 파일 로드 시 자동으로 다음 사항을 검증합니다:
 * ✓ 대칭성
 * ✓ 대각선 값 (1.0)
 * ✓ 값 범위 (0.0 ~ 1.0)
-* ✓ 라벨 일치 (Subordinate ↔ Inclusive)
+* ✓ 라벨 일치 (Local ↔ Global)
 
 오류 발생 시 상세한 메시지가 표시됩니다.
 

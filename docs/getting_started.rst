@@ -10,8 +10,8 @@
 ~~~~~~~~~~~~~~~~
 
 * 프로그램 설치 폴더 내 ``data/`` 디렉토리
-* ``sample_subordinate.csv``: 6개 영역(J, T, Y, N, O, Q)의 subordinate similarity
-* ``sample_inclusive.csv``: 동일한 영역의 inclusive similarity
+* ``sample_local.csv``: 6개 영역(J, T, Y, N, O, Q)의 local similarity
+* ``sample_global.csv``: 동일한 영역의 global similarity
 
 빠른 시작 절차
 ~~~~~~~~~~~~~~
@@ -19,12 +19,12 @@
 1. ACC 프로그램 실행
 2. 왼쪽 상단 "Load CSV" 버튼 클릭
 
-   * ``data/sample_subordinate.csv`` 선택
+   * ``data/sample_local.csv`` 선택
    * 완성된 dendrogram이 중앙 상단에 자동 표시됨
 
 3. 왼쪽 하단 "Load CSV" 버튼 클릭
 
-   * ``data/sample_inclusive.csv`` 선택
+   * ``data/sample_global.csv`` 선택
    * 완성된 dendrogram이 중앙 하단에 자동 표시됨
 
 4. 오른쪽 패널에서 "Generate ACC Visualization" 버튼 클릭
@@ -53,12 +53,12 @@
 
 ACC는 3단계 워크플로우로 구성됩니다:
 
-Step 1: Subordinate Matrix 로드
+Step 1: Local Matrix 로드
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-1. 왼쪽 패널 상단의 **"Subordinate Similarity Matrix"** 섹션으로 이동
+1. 왼쪽 패널 상단의 **"Local Similarity Matrix"** 섹션으로 이동
 2. **[Load CSV]** 버튼 클릭
-3. Subordinate similarity matrix CSV 파일 선택
+3. Local similarity matrix CSV 파일 선택
 4. 매트릭스 데이터 확인
 5. **Dendrogram 자동 생성 및 표시** - 중앙 패널 상단에 완성된 dendrogram이 즉시 표시됨
 
@@ -71,18 +71,18 @@ Step 1: Subordinate Matrix 로드
 * 슬라이더 자동으로 마지막 단계로 이동
 * 완성된 dendrogram 즉시 표시
 
-Step 2: Inclusive Matrix 로드
+Step 2: Global Matrix 로드
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-1. 왼쪽 패널 하단의 **"Inclusive Similarity Matrix"** 섹션으로 이동
+1. 왼쪽 패널 하단의 **"Global Similarity Matrix"** 섹션으로 이동
 2. **[Load CSV]** 버튼 클릭
-3. Inclusive similarity matrix CSV 파일 선택
+3. Global similarity matrix CSV 파일 선택
 4. 매트릭스 데이터 확인
 5. **Dendrogram 자동 생성 및 표시** - 중앙 패널 하단에 완성된 dendrogram이 즉시 표시됨
 
 .. important::
 
-   Subordinate와 Inclusive matrix는 동일한 라벨(지역/객체 이름)을 가져야 합니다.
+   Local와 Global matrix는 동일한 라벨(지역/객체 이름)을 가져야 합니다.
    로드 후 완성된 dendrogram이 자동으로 표시됩니다. 단계별 과정을 보려면 슬라이더를 조작하세요.
 
 Step 3: ACC 시각화 생성

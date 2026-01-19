@@ -2,10 +2,10 @@
 
 ## 1. 개요
 
-ACC(Adaptive Cluster Circle)는 두 종류의 덴드로그램(하위 subordinate, 포괄 inclusive)에서 유사도 정보를 결합해, 클러스터 간의 상대적 관계를 원형 도식으로 시각화하는 방법론이다. 각 클러스터는 두 개의 유사도 점수를 가진다:
+ACC(Adaptive Cluster Circle)는 두 종류의 덴드로그램(하위 local, 포괄 global)에서 유사도 정보를 결합해, 클러스터 간의 상대적 관계를 원형 도식으로 시각화하는 방법론이다. 각 클러스터는 두 개의 유사도 점수를 가진다:
 
-- **첫 번째 점수 (sim_sub)**: 하위 덴드로그램에서 해당 클러스터의 유사도
-- **두 번째 점수 (sim_inc)**: 포괄 덴드로그램에서의 대응 유사도 또는, 없을 경우 포괄 유사도 행렬에서의 평균 유사도
+- **첫 번째 점수 (sim_local)**: 하위 덴드로그램에서 해당 클러스터의 유사도
+- **두 번째 점수 (sim_global)**: 포괄 덴드로그램에서의 대응 유사도 또는, 없을 경우 포괄 유사도 행렬에서의 평균 유사도
 
 이 두 점수로부터 원의 지름과 각도를 산출하여, 점진적으로 클러스터를 결합해 나감으로써 전체 공간 구조를 도형적으로 재구성한다.
 
@@ -16,15 +16,15 @@ ACC(Adaptive Cluster Circle)는 두 종류의 덴드로그램(하위 subordinate
 1. **지역(또는 객체) 리스트**  
    예: `["J", "T", "Y", "N", "O", "Q"]`
 
-2. **하위 덴드로그램 (subordinate dendrogram)**  
+2. **하위 덴드로그램 (local dendrogram)**  
    - 각 내부 노드는 (멤버 집합, 유사도)로 표현
    - 덴드로그램 구조를 순회하며 각 클러스터 추출
 
-3. **포괄 덴드로그램 (inclusive dendrogram)**  
-   - 동일 멤버 집합의 클러스터가 존재할 경우, 해당 유사도를 sim_inc로 사용
+3. **포괄 덴드로그램 (global dendrogram)**  
+   - 동일 멤버 집합의 클러스터가 존재할 경우, 해당 유사도를 sim_global로 사용
    - 존재하지 않을 경우 포괄 유사도 행렬에서 평균값을 계산
 
-4. **포괄 유사도 행렬 (inclusive similarity matrix)**  
+4. **포괄 유사도 행렬 (global similarity matrix)**  
    - 예: `matrix[a][b] = similarity (0~1)` 형태의 중첩 딕셔너리
 
 ---
@@ -38,29 +38,29 @@ ACC(Adaptive Cluster Circle)는 두 종류의 덴드로그램(하위 subordinate
 ```python
 {
   "members": {"A", "B", ...},
-  "sim_sub": 0.85
+  "sim_local": 0.85
 }
 ```
 
-### (2) 두 번째 점수 계산 (sim_inc)
+### (2) 두 번째 점수 계산 (sim_global)
 
 1. 동일 멤버셋이 포괄 덴드로그램에 존재하면 해당 유사도 사용.
 2. 없을 경우, 포괄 유사도 행렬에서 멤버 간 유사도 평균을 계산.
 
 ```python
-sim_inc = 평균(matrix[a][b] for (a,b) in 모든 멤버쌍)
+sim_global = 평균(matrix[a][b] for (a,b) in 모든 멤버쌍)
 ```
 
 ### (3) 도형 변수 계산
 
-- **지름(d)** = `unit / sim_inc`  (역수 변환)
-- **각도(θ)** = `180° * (1 - sim_sub)`  (유사도가 높을수록 각도 작음)
+- **지름(d)** = `unit / sim_global`  (역수 변환)
+- **각도(θ)** = `180° * (1 - sim_local)`  (유사도가 높을수록 각도 작음)
 
 이로써 하나의 원(클러스터)을 표현할 수 있는 기초 정보가 완성된다.
 
 ### (4) 클러스터 정렬
 
-`sim_sub` 내림차순으로 정렬하여, 가장 유사도가 높은(가장 안쪽) 클러스터부터 배치한다.
+`sim_local` 내림차순으로 정렬하여, 가장 유사도가 높은(가장 안쪽) 클러스터부터 배치한다.
 
 ---
 
@@ -103,7 +103,7 @@ class DendroNode:
 - `extract_clusters_from_dendro()` : 하위 덴드로그램 순회, 클러스터 추출
 - `find_cluster_in_dendro_by_members()` : 포괄 덴드로그램에서 대응 클러스터 검색
 - `average_pairwise_similarity()` : 포괄 유사도 행렬에서 평균 유사도 계산
-- `decorate_clusters()` : 각 클러스터에 sim_inc, d, θ 부여
+- `decorate_clusters()` : 각 클러스터에 sim_global, d, θ 부여
 - `place_first_cluster()` : 첫 클러스터 배치
 - `add_area_to_cluster()` : 지역 하나 추가 케이스 구현
 - `merge_two_clusters()` : 클러스터 병합 케이스 구현
@@ -123,7 +123,7 @@ class DendroNode:
 
 ACC 알고리즘은 두 덴드로그램 간의 위계적 관계를 2차원 도형으로 직관적으로 표현할 수 있는 방법이다. 알고리즘 구현은 다음 세 가지 핵심 단계로 요약된다:
 
-1. **클러스터별 이중 점수 계산 (sub + inclusive)**
+1. **클러스터별 이중 점수 계산 (sub + global)**
 2. **도형 변수 변환 (지름, 각도)**
 3. **순차적 배치 및 병합 (add / merge)**
 

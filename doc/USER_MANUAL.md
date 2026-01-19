@@ -40,11 +40,11 @@
 
 ### 1.1 ACC란?
 
-ACC(Area Affinity in Concentric Circles)는 계층적 클러스터링 결과를 **동심원 기반 원형 다이어그램**으로 시각화하는 Python 애플리케이션입니다. 두 종류의 유사도 정보(Subordinate와 Inclusive)를 결합하여 영역(area) 간의 친화도(affinity) 관계를 직관적으로 표현합니다.
+ACC(Area Affinity in Concentric Circles)는 계층적 클러스터링 결과를 **동심원 기반 원형 다이어그램**으로 시각화하는 Python 애플리케이션입니다. 두 종류의 유사도 정보(Local와 Global)를 결합하여 영역(area) 간의 친화도(affinity) 관계를 직관적으로 표현합니다.
 
 ### 1.2 주요 특징
 
-- **이중 유사도 통합**: Subordinate와 Inclusive 유사도를 동시에 고려
+- **이중 유사도 통합**: Local와 Global 유사도를 동시에 고려
 - **대화형 시각화**: 단계별 클러스터링 과정 재생 가능
 - **동심원 표현**: 클러스터 계층을 동심원으로 직관적 표현
 - **인터랙티브 조정**: Branch swap으로 레이아웃 최적화
@@ -150,16 +150,16 @@ python acc_gui.py
 
 **샘플 데이터 위치**:
 - 프로그램 설치 폴더 내 `data/` 디렉토리
-- `sample_subordinate.csv`: 6개 영역(J, T, Y, N, O, Q)의 subordinate similarity
-- `sample_inclusive.csv`: 동일한 영역의 inclusive similarity
+- `sample_local.csv`: 6개 영역(J, T, Y, N, O, Q)의 local similarity
+- `sample_global.csv`: 동일한 영역의 global similarity
 
 **빠른 시작 절차**:
 1. ACC 프로그램 실행
 2. 왼쪽 상단 "Load CSV" 버튼 클릭
-   - `data/sample_subordinate.csv` 선택
+   - `data/sample_local.csv` 선택
    - 완성된 dendrogram이 중앙 상단에 자동 표시됨
 3. 왼쪽 하단 "Load CSV" 버튼 클릭
-   - `data/sample_inclusive.csv` 선택
+   - `data/sample_global.csv` 선택
    - 완성된 dendrogram이 중앙 하단에 자동 표시됨 (그림 2)
 4. 오른쪽 패널에서 "Generate ACC Visualization" 버튼 클릭
    - 완성된 ACC 동심원이 자동 표시됨 (그림 3)
@@ -182,11 +182,11 @@ python acc_gui.py
 
 ACC는 3단계 워크플로우로 구성됩니다:
 
-#### **Step 1: Subordinate Matrix 로드**
+#### **Step 1: Local Matrix 로드**
 
-1. 왼쪽 패널 상단의 **"Subordinate Similarity Matrix"** 섹션으로 이동
+1. 왼쪽 패널 상단의 **"Local Similarity Matrix"** 섹션으로 이동
 2. **[Load CSV]** 버튼 클릭
-3. Subordinate similarity matrix CSV 파일 선택
+3. Local similarity matrix CSV 파일 선택
 4. 매트릭스 데이터 확인
 5. **Dendrogram 자동 생성 및 표시** - 중앙 패널 상단에 완성된 dendrogram이 즉시 표시됨
 
@@ -197,16 +197,16 @@ ACC는 3단계 워크플로우로 구성됩니다:
 - 슬라이더 자동으로 마지막 단계로 이동
 - 완성된 dendrogram 즉시 표시
 
-#### **Step 2: Inclusive Matrix 로드**
+#### **Step 2: Global Matrix 로드**
 
-1. 왼쪽 패널 하단의 **"Inclusive Similarity Matrix"** 섹션으로 이동
+1. 왼쪽 패널 하단의 **"Global Similarity Matrix"** 섹션으로 이동
 2. **[Load CSV]** 버튼 클릭
-3. Inclusive similarity matrix CSV 파일 선택
+3. Global similarity matrix CSV 파일 선택
 4. 매트릭스 데이터 확인
 5. **Dendrogram 자동 생성 및 표시** - 중앙 패널 하단에 완성된 dendrogram이 즉시 표시됨
 
 **중요**:
-- Subordinate와 Inclusive matrix는 동일한 라벨(지역/객체 이름)을 가져야 합니다.
+- Local와 Global matrix는 동일한 라벨(지역/객체 이름)을 가져야 합니다.
 - 로드 후 완성된 dendrogram이 자동으로 표시됩니다. 단계별 과정을 보려면 슬라이더를 조작하세요.
 
 #### **Step 3: ACC 시각화 생성**
@@ -321,11 +321,11 @@ ACC 시각화는 여러 겹의 동심원으로 구성됩니다:
 
 ```
         ┌──────────────┐
-        │ Outer Circle │  ← 낮은 inclusive similarity
+        │ Outer Circle │  ← 낮은 global similarity
         │  ┌────────┐  │
         │  │ Middle │  │
         │  │ ┌────┐ │  │
-        │  │ │Core│ │  │  ← 높은 inclusive similarity
+        │  │ │Core│ │  │  ← 높은 global similarity
         │  │ └────┘ │  │
         │  └────────┘  │
         └──────────────┘
@@ -333,12 +333,12 @@ ACC 시각화는 여러 겹의 동심원으로 구성됩니다:
 
 **원의 의미**:
 - **가장 안쪽 원** (보라색): 개별 영역들 (Areas)
-- **중간 원들** (파란색~초록색): 클러스터 레벨, inc_sim 값으로 라벨 표시
-- **원 간 거리**: Inclusive similarity에 비례
+- **중간 원들** (파란색~초록색): 클러스터 레벨, global_sim 값으로 라벨 표시
+- **원 간 거리**: Global similarity에 비례
 
 #### 각도 (Angle)
 
-- 같은 원 위의 점들 간 각도는 **Subordinate similarity**를 반영
+- 같은 원 위의 점들 간 각도는 **Local similarity**를 반영
 - 각도가 작을수록 유사도가 높음
 - 0도 기준: 위쪽 (0, 1) 방향
 
@@ -376,7 +376,7 @@ ACC2는 ACC의 개선 버전으로, 추가적인 인터랙티브 기능을 제�
 **표시 정보**:
 - **Cluster**: 병합된 영역들
 - **Angle**: 극좌표 각도
-- **Sub sim**: Subordinate similarity
+- **Sub sim**: Local similarity
 
 #### Branch Swap
 
@@ -441,8 +441,8 @@ Dendrogram과 ACC 시각화를 이미지 파일로 저장할 수 있습니다.
 
 #### 기본 파일명
 
-- **Subordinate Dendrogram**: `Subordinate_dendrogram.png`
-- **Inclusive Dendrogram**: `Inclusive_dendrogram.png`
+- **Local Dendrogram**: `Local_dendrogram.png`
+- **Global Dendrogram**: `Global_dendrogram.png`
 - **ACC Visualization**: `examples/ACC_visualization.png`
 
 파일명은 저장 시 자유롭게 변경 가능합니다.
@@ -509,7 +509,7 @@ Q,0.36,0.34,0.33,0.75,0.85,1.0
 3. **대각선**: 모든 값이 1.0
 4. **대칭성**: matrix[i][j] == matrix[j][i]
 5. **값 범위**: 0.0 ~ 1.0
-6. **라벨 일치**: Subordinate와 Inclusive matrix가 동일한 라벨 사용
+6. **라벨 일치**: Local와 Global matrix가 동일한 라벨 사용
 
 #### 잘못된 예시
 
@@ -575,7 +575,7 @@ matrix = matrix + matrix.T - np.diag(np.diag(matrix))
 
 # DataFrame 생성 및 저장
 df = pd.DataFrame(matrix, index=labels, columns=labels)
-df.to_csv('subordinate.csv')
+df.to_csv('local.csv')
 ```
 
 ### 6.3 데이터 검증
@@ -586,7 +586,7 @@ CSV 파일 로드 시 자동으로 다음 사항을 검증합니다:
 - ✓ 대칭성
 - ✓ 대각선 값 (1.0)
 - ✓ 값 범위 (0.0 ~ 1.0)
-- ✓ 라벨 일치 (Subordinate ↔ Inclusive)
+- ✓ 라벨 일치 (Local ↔ Global)
 
 오류 발생 시 상세한 메시지가 표시됩니다.
 
@@ -600,27 +600,27 @@ ACC는 다음 공식을 사용합니다:
 
 #### Diameter (지름)
 ```
-d = 1 + (1 - sim_inc)
+d = 1 + (1 - sim_global)
 ```
 
-- **sim_inc가 높을수록** → d가 작음 → **중심에 가까움**
-- **sim_inc가 낮을수록** → d가 큼 → **바깥쪽에 위치**
+- **sim_global가 높을수록** → d가 작음 → **중심에 가까움**
+- **sim_global가 낮을수록** → d가 큼 → **바깥쪽에 위치**
 
 예시:
-- sim_inc = 0.9 → d = 1.1 (중심 근처)
-- sim_inc = 0.5 → d = 1.5 (바깥쪽)
+- sim_global = 0.9 → d = 1.1 (중심 근처)
+- sim_global = 0.5 → d = 1.5 (바깥쪽)
 
 #### Angle (각도)
 ```
-θ = 180° × (1 - sim_sub)
+θ = 180° × (1 - sim_local)
 ```
 
-- **sim_sub가 높을수록** → θ가 작음 → **가까운 각도**
-- **sim_sub가 낮을수록** → θ가 큼 → **먼 각도**
+- **sim_local가 높을수록** → θ가 작음 → **가까운 각도**
+- **sim_local가 낮을수록** → θ가 큼 → **먼 각도**
 
 예시:
-- sim_sub = 0.9 → θ = 18° (가까움)
-- sim_sub = 0.5 → θ = 90° (직각)
+- sim_local = 0.9 → θ = 18° (가까움)
+- sim_local = 0.5 → θ = 90° (직각)
 
 ### 7.2 시각화 패턴 읽기
 
@@ -635,7 +635,7 @@ d = 1 + (1 - sim_inc)
 **특징**:
 - 작은 각도 차이
 - 동일한 원 위에 위치
-- 높은 subordinate similarity
+- 높은 local similarity
 
 **해석**: J, T, Y는 매우 유사한 그룹
 
@@ -670,12 +670,12 @@ J T Y         Q
 
 ### 7.3 두 Similarity의 역할
 
-#### Subordinate Similarity
+#### Local Similarity
 - **역할**: 같은 레벨 내에서의 상대적 위치 결정
 - **영향**: 각도 (angular position)
 - **해석**: "얼마나 가까운가?"
 
-#### Inclusive Similarity
+#### Global Similarity
 - **역할**: 계층 레벨 결정
 - **영향**: 반지름 (radial position)
 - **해석**: "어느 레벨에 속하는가?"
@@ -683,12 +683,12 @@ J T Y         Q
 **예시**:
 ```
 영역 A, B:
-- sub_sim = 0.9 (높음) → 작은 각도 차이 → 가까이 위치
-- inc_sim = 0.5 (낮음) → 큰 반지름 → 바깥쪽 원
+- local_sim = 0.9 (높음) → 작은 각도 차이 → 가까이 위치
+- global_sim = 0.5 (낮음) → 큰 반지름 → 바깥쪽 원
 
 영역 C, D:
-- sub_sim = 0.5 (낮음) → 큰 각도 차이 → 멀리 위치
-- inc_sim = 0.9 (높음) → 작은 반지름 → 안쪽 원
+- local_sim = 0.5 (낮음) → 큰 각도 차이 → 멀리 위치
+- global_sim = 0.9 (높음) → 작은 반지름 → 안쪽 원
 ```
 
 ---
@@ -722,7 +722,7 @@ J T Y         Q
 
 #### 오류: "Labels do not match"
 
-**원인**: Subordinate와 Inclusive matrix의 라벨이 다름
+**원인**: Local와 Global matrix의 라벨이 다름
 
 **해결**:
 1. 두 CSV 파일의 첫 행과 첫 열 비교
@@ -730,10 +730,10 @@ J T Y         Q
 
 **예시**:
 ```
-# Subordinate: J, T, Y, N, O, Q
-# Inclusive:   J, T, Y, N, Q, O  ← 순서 다름
+# Local: J, T, Y, N, O, Q
+# Global:   J, T, Y, N, Q, O  ← 순서 다름
 
-→ Inclusive를 J, T, Y, N, O, Q 순서로 재정렬
+→ Global를 J, T, Y, N, O, Q 순서로 재정렬
 ```
 
 #### 오류: "Value out of range"
@@ -827,24 +827,24 @@ pip install matplotlib
 
 ## 9. FAQ
 
-### Q1: Subordinate와 Inclusive similarity의 차이는?
+### Q1: Local와 Global similarity의 차이는?
 
 **A**:
-- **Subordinate**: 주요 계층 구조를 나타냄 (각도 결정)
-- **Inclusive**: 보조 유사도 정보 (반지름 결정)
+- **Local**: 주요 계층 구조를 나타냄 (각도 결정)
+- **Global**: 보조 유사도 정보 (반지름 결정)
 
 두 가지 다른 관점의 유사도를 결합하여 더 풍부한 시각화를 생성합니다.
 
 ### Q2: 동일한 데이터를 두 번 사용해도 되나요?
 
-**A**: 네, 가능합니다. 같은 CSV를 Subordinate와 Inclusive 모두에 로드하면:
+**A**: 네, 가능합니다. 같은 CSV를 Local와 Global 모두에 로드하면:
 - 각도와 반지름이 동일한 유사도로 결정됨
 - 단순한 계층 구조 시각화 가능
 
 ### Q3: 라벨 순서가 중요한가요?
 
 **A**: 네, 중요합니다.
-- Subordinate와 Inclusive matrix의 라벨 순서가 동일해야 함
+- Local와 Global matrix의 라벨 순서가 동일해야 함
 - 순서가 다르면 오류 발생
 - Matrix 값은 라벨 기준으로 매칭됨
 
@@ -907,12 +907,12 @@ https://github.com/[repository-url]
 from acc_core import build_acc, DendroNode
 
 # Dendrogram 구조 생성
-sub_dendro = DendroNode(...)
-inc_dendro = DendroNode(...)
-inc_matrix = {...}
+local_dendro = DendroNode(...)
+global_dendro = DendroNode(...)
+global_matrix = {...}
 
 # ACC 실행
-result = build_acc(sub_dendro, inc_dendro, inc_matrix)
+result = build_acc(local_dendro, global_dendro, global_matrix)
 
 # 결과 접근
 print(result["points"])  # 좌표
@@ -944,7 +944,7 @@ print(result["theta"])
 
 프로그램과 함께 제공되는 샘플 데이터:
 
-**data/sample_subordinate.csv**:
+**data/sample_local.csv**:
 ```csv
 ,J,T,Y,N,O,Q
 J,1.0,0.9,0.8,0.4,0.35,0.36
@@ -955,7 +955,7 @@ O,0.35,0.33,0.32,0.75,1.0,0.85
 Q,0.36,0.34,0.33,0.75,0.85,1.0
 ```
 
-**data/sample_inclusive.csv**:
+**data/sample_global.csv**:
 ```csv
 ,J,T,Y,N,O,Q
 J,1.0,0.88,0.82,0.4,0.35,0.36

@@ -7,14 +7,14 @@ from acc_utils import dict_matrix_from_dataframe, build_acc_from_matrices
 
 
 print("Loading sample data...")
-sub_df = pd.read_csv("data/sample_subordinate.csv", index_col=0)
-inc_df = pd.read_csv("data/sample_inclusive.csv", index_col=0)
+local_df = pd.read_csv("data/sample_local.csv", index_col=0)
+global_df = pd.read_csv("data/sample_global.csv", index_col=0)
 
-sub_matrix = dict_matrix_from_dataframe(sub_df)
-inc_matrix = dict_matrix_from_dataframe(inc_df)
+local_matrix = dict_matrix_from_dataframe(local_df)
+global_matrix = dict_matrix_from_dataframe(global_df)
 
 print("Running ACC algorithm...")
-result = build_acc_from_matrices(sub_matrix, inc_matrix, unit=1.0)
+result = build_acc_from_matrices(local_matrix, global_matrix, unit=1.0)
 
 print("\n✓ SUCCESS! Multiple concentric circles generated:")
 print(f"Total members: {len(result['all_members'])}")

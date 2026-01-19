@@ -112,8 +112,8 @@ def extract_clusters_from_dendro_filtered(root):
         if len(node.members) >= 2:
             clusters.append({
                 "members": set(node.members),
-                "sim_sub": node.sim,
-                "sim_inc": None,
+                "sim_local": node.sim,
+                "sim_global": None,
                 "diameter": None,
                 "theta": None,
                 "center": None,
@@ -257,14 +257,14 @@ def dict_matrix_from_dataframe(df):
     return matrix
 
 
-def build_acc_from_matrices(sub_matrix, inc_matrix, unit=1.0, method='average'):
+def build_acc_from_matrices(local_matrix, global_matrix, unit=1.0, method='average'):
     """
     Build ACC result directly from similarity matrices with multiple concentric circles
     This is a convenience function that handles the complete pipeline
 
     Args:
-        sub_matrix: subordinate similarity matrix (dict of dict)
-        inc_matrix: inclusive similarity matrix (dict of dict)
+        local_matrix: local similarity matrix (dict of dict)
+        global_matrix: global similarity matrix (dict of dict)
         unit: unit parameter for diameter calculation
         method: linkage method for hierarchical clustering
 
@@ -276,23 +276,23 @@ def build_acc_from_matrices(sub_matrix, inc_matrix, unit=1.0, method='average'):
     from acc_core import build_acc, DendroNode
 
     # Convert matrices to dendrograms
-    sub_dendro, sub_labels = matrix_to_dendrogram(sub_matrix, method=method)
-    inc_dendro, inc_labels = matrix_to_dendrogram(inc_matrix, method=method)
+    local_dendro, local_labels = matrix_to_dendrogram(local_matrix, method=method)
+    global_dendro, global_labels = matrix_to_dendrogram(global_matrix, method=method)
 
     # Call build_acc which now returns multiple clusters
-    acc_result = build_acc(sub_dendro, inc_dendro, inc_matrix, unit=unit)
+    acc_result = build_acc(local_dendro, global_dendro, global_matrix, unit=unit)
 
     return acc_result
 
 
-def build_acc_from_matrices_steps(sub_matrix, inc_matrix, unit=1.0, method='average'):
+def build_acc_from_matrices_steps(local_matrix, global_matrix, unit=1.0, method='average'):
     """
     Build ACC step by step directly from similarity matrices
     This returns all intermediate states for visualization
 
     Args:
-        sub_matrix: subordinate similarity matrix (dict of dict)
-        inc_matrix: inclusive similarity matrix (dict of dict)
+        local_matrix: local similarity matrix (dict of dict)
+        global_matrix: global similarity matrix (dict of dict)
         unit: unit parameter for diameter calculation
         method: linkage method for hierarchical clustering
 
@@ -302,16 +302,16 @@ def build_acc_from_matrices_steps(sub_matrix, inc_matrix, unit=1.0, method='aver
     from acc_core import build_acc_steps, DendroNode
 
     # Convert matrices to dendrograms
-    sub_dendro, sub_labels = matrix_to_dendrogram(sub_matrix, method=method)
-    inc_dendro, inc_labels = matrix_to_dendrogram(inc_matrix, method=method)
+    local_dendro, local_labels = matrix_to_dendrogram(local_matrix, method=method)
+    global_dendro, global_labels = matrix_to_dendrogram(global_matrix, method=method)
 
     # Call build_acc_steps which returns all steps
-    steps = build_acc_steps(sub_dendro, inc_dendro, inc_matrix, unit=unit)
+    steps = build_acc_steps(local_dendro, global_dendro, global_matrix, unit=unit)
 
     return steps
 
 
-def build_acc_from_matrices_iterative(sub_matrix, inc_matrix, unit=1.0, method='average'):
+def build_acc_from_matrices_iterative(local_matrix, global_matrix, unit=1.0, method='average'):
     """
     Build ACC iteratively using the new algorithm (Option 1 approach)
     Always selects globally highest similarity at each step
@@ -319,8 +319,8 @@ def build_acc_from_matrices_iterative(sub_matrix, inc_matrix, unit=1.0, method='
     This is the NEW algorithm that doesn't require dendrograms.
 
     Args:
-        sub_matrix: subordinate similarity matrix (dict of dict)
-        inc_matrix: inclusive similarity matrix (dict of dict)
+        local_matrix: local similarity matrix (dict of dict)
+        global_matrix: global similarity matrix (dict of dict)
         unit: unit parameter for diameter calculation
         method: linkage method for cluster similarity calculation
 
@@ -330,6 +330,6 @@ def build_acc_from_matrices_iterative(sub_matrix, inc_matrix, unit=1.0, method='
     from acc_core_new import build_acc_iterative
 
     # Call the new iterative algorithm directly on matrices
-    steps = build_acc_iterative(sub_matrix, inc_matrix, unit=unit, method=method)
+    steps = build_acc_iterative(local_matrix, global_matrix, unit=unit, method=method)
 
     return steps

@@ -123,11 +123,11 @@ ACC 시각화는 여러 겹의 동심원으로 구성됩니다:
 .. code-block:: text
 
            ┌──────────────┐
-           │ Outer Circle │  ← 낮은 inclusive similarity
+           │ Outer Circle │  ← 낮은 global similarity
            │  ┌────────┐  │
            │  │ Middle │  │
            │  │ ┌────┐ │  │
-           │  │ │Core│ │  │  ← 높은 inclusive similarity
+           │  │ │Core│ │  │  ← 높은 global similarity
            │  │ └────┘ │  │
            │  └────────┘  │
            └──────────────┘
@@ -136,13 +136,13 @@ ACC 시각화는 여러 겹의 동심원으로 구성됩니다:
 ^^^^^^^^^
 
 * **가장 안쪽 원** (보라색): 개별 영역들 (Areas)
-* **중간 원들** (파란색~초록색): 클러스터 레벨, inc_sim 값으로 라벨 표시
-* **원 간 거리**: Inclusive similarity에 비례
+* **중간 원들** (파란색~초록색): 클러스터 레벨, global_sim 값으로 라벨 표시
+* **원 간 거리**: Global similarity에 비례
 
 각도 (Angle)
 ~~~~~~~~~~~~
 
-* 같은 원 위의 점들 간 각도는 **Subordinate similarity**를 반영
+* 같은 원 위의 점들 간 각도는 **Local similarity**를 반영
 * 각도가 작을수록 유사도가 높음
 * 0도 기준: 위쪽 (0, 1) 방향
 

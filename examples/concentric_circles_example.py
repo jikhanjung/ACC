@@ -6,16 +6,16 @@ from acc_core_new import build_acc_iterative
 import math
 
 # User's example:
-# A-B: subordinate 0.8, inclusive 0.5
-# (A+B)-C: subordinate 0.15, inclusive 0.35
+# A-B: local 0.8, global 0.5
+# (A+B)-C: local 0.15, global 0.35
 
-sub_matrix = {
+local_matrix = {
     "A": {"B": 0.8, "C": 0.15},
     "B": {"A": 0.8, "C": 0.15},
     "C": {"A": 0.15, "B": 0.15}
 }
 
-inc_matrix = {
+global_matrix = {
     "A": {"B": 0.5, "C": 0.35},
     "B": {"A": 0.5, "C": 0.35},
     "C": {"A": 0.35, "B": 0.35}
@@ -37,7 +37,7 @@ print("    - C placed on radius 1.4285 circle (outer)")
 print("    - Concentric circles structure!")
 print("\n")
 
-steps = build_acc_iterative(sub_matrix, inc_matrix, unit=1.0)
+steps = build_acc_iterative(local_matrix, global_matrix, unit=1.0)
 
 print("="*70)
 print("ACTUAL RESULTS")

@@ -24,11 +24,11 @@ def main():
     data_inc = (data_inc + data_inc.T) / 2  # Make symmetric
     np.fill_diagonal(data_inc, 1.0)  # Diagonal is 1.0
 
-    sub_df = pd.DataFrame(data_sub, index=labels, columns=labels)
-    inc_df = pd.DataFrame(data_inc, index=labels, columns=labels)
+    local_df = pd.DataFrame(data_sub, index=labels, columns=labels)
+    global_df = pd.DataFrame(data_inc, index=labels, columns=labels)
 
     print("Creating dialog...")
-    dialog = AreaListEditorDialog(labels, sub_df, inc_df)
+    dialog = AreaListEditorDialog(labels, local_df, global_df)
 
     print("Showing dialog...")
     result = dialog.exec()
@@ -39,8 +39,8 @@ def main():
         data = dialog.get_result()
         print(f"Modified: {data['modified']}")
         print(f"Labels: {data['labels']}")
-        print(f"Sub matrix shape: {data['sub_matrix'].shape}")
-        print(f"Inc matrix shape: {data['inc_matrix'].shape}")
+        print(f"Sub matrix shape: {data['local_matrix'].shape}")
+        print(f"Inc matrix shape: {data['global_matrix'].shape}")
 
     sys.exit(0)
 

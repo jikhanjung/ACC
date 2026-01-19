@@ -9,7 +9,7 @@ from scipy.spatial.distance import squareform
 import numpy as np
 
 # Load sample data
-df = pd.read_csv("data/sample_subordinate.csv", index_col=0)
+df = pd.read_csv("data/sample_local.csv", index_col=0)
 print(f"Loaded matrix: {df.shape}")
 print(f"Labels: {df.index.tolist()}")
 

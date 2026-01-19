@@ -14,9 +14,9 @@
 ┌─────────────────────────────┐
 │ Similarity Matrices          │
 ├─────────────────────────────┤
-│ 1. Subordinate Matrix        │  ← 섹션 레이블
+│ 1. Local Matrix        │  ← 섹션 레이블
 │                              │
-│ Subordinate      [Load CSV]  │  ← 중복된 제목 + 버튼
+│ Local      [Load CSV]  │  ← 중복된 제목 + 버튼
 │ Step: 0  [슬라이더] [Prev][Next]│
 │ ┌─────────────┐             │
 │ │   Matrix    │  (높이 300px)│  ← 작은 표시 공간
@@ -25,13 +25,13 @@
 │                              │
 │ <hr>                         │
 │                              │
-│ 2. Inclusive Matrix          │
+│ 2. Global Matrix          │
 │ ...                          │
 └─────────────────────────────┘
 ```
 
 **문제점:**
-- ❌ "Subordinate" 제목이 중복 (섹션 레이블과 위젯 제목)
+- ❌ "Local" 제목이 중복 (섹션 레이블과 위젯 제목)
 - ❌ 매트릭스 표시 공간이 작음 (300px 최대 높이)
 - ❌ 불필요한 여백과 정보
 - ❌ Step 정보가 두 줄로 표시되어 공간 낭비
@@ -42,7 +42,7 @@
 ┌─────────────────────────────┐
 │ Similarity Matrices          │
 ├─────────────────────────────┤
-│ 1. Subordinate Matrix [Load]│  ← 한 줄에 레이블 + 버튼
+│ 1. Local Matrix [Load]│  ← 한 줄에 레이블 + 버튼
 │ Step: 0 | Load matrix [→][→]│  ← 한 줄에 step 정보 + 컨트롤
 │ ┌──────────────────────┐    │
 │ │                       │    │
@@ -52,7 +52,7 @@
 │ └──────────────────────┘    │
 │ ✓ Loaded 6x6              │  ← 축약된 info
 │ ──────                      │  ← 짧은 구분선
-│ 2. Inclusive Matrix [Load]  │
+│ 2. Global Matrix [Load]  │
 │ ...                          │
 └─────────────────────────────┘
 ```
@@ -179,12 +179,12 @@ layout.addWidget(self.info_label)
 ```python
 def setup_content(self):
     # 섹션 레이블
-    sub_label = QLabel("<b>1. Subordinate Matrix</b>")
+    sub_label = QLabel("<b>1. Local Matrix</b>")
     self.content_layout.addWidget(sub_label)
 
     # 위젯 (자체 헤더 포함)
-    self.sub_matrix_widget = StepMatrixWidget("Subordinate")
-    self.content_layout.addWidget(self.sub_matrix_widget)
+    self.local_matrix_widget = StepMatrixWidget("Local")
+    self.content_layout.addWidget(self.local_matrix_widget)
 ```
 
 **After:**
@@ -192,17 +192,17 @@ def setup_content(self):
 def setup_content(self):
     # 섹션 헤더: 레이블 + 버튼
     sub_header_layout = QHBoxLayout()
-    sub_label = QLabel("<b>1. Subordinate Matrix</b>")
+    sub_label = QLabel("<b>1. Local Matrix</b>")
     sub_header_layout.addWidget(sub_label)
     sub_header_layout.addStretch()
 
     # 위젯 (헤더 숨김)
-    self.sub_matrix_widget = StepMatrixWidget("Subordinate", show_header=False)
-    sub_header_layout.addWidget(self.sub_matrix_widget.load_btn)  # 버튼을 헤더에 배치
+    self.local_matrix_widget = StepMatrixWidget("Local", show_header=False)
+    sub_header_layout.addWidget(self.local_matrix_widget.load_btn)  # 버튼을 헤더에 배치
     self.content_layout.addLayout(sub_header_layout)
 
     # 위젯 추가
-    self.content_layout.addWidget(self.sub_matrix_widget)
+    self.content_layout.addWidget(self.local_matrix_widget)
 ```
 
 ### 효과
@@ -444,8 +444,8 @@ $ python acc_gui.py
 ```
 
 **확인 항목:**
-1. ✅ "1. Subordinate Matrix [Load CSV]" 한 줄로 표시
-2. ✅ "Subordinate" 중복 제목 제거됨
+1. ✅ "1. Local Matrix [Load CSV]" 한 줄로 표시
+2. ✅ "Local" 중복 제목 제거됨
 3. ✅ Step 정보가 한 줄로 축약됨
 4. ✅ 내비게이션 버튼이 작아짐 (◀, ▶)
 5. ✅ 매트릭스 표시 공간이 확대됨
@@ -455,7 +455,7 @@ $ python acc_gui.py
 
 ```bash
 $ python acc_gui.py
-# Load sample_subordinate.csv
+# Load sample_local.csv
 # Navigate through steps
 ```
 

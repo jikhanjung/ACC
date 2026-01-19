@@ -13,7 +13,7 @@ def test_clustering_steps():
     print("=" * 60)
 
     # Load sample data
-    df = pd.read_csv("data/sample_subordinate.csv", index_col=0)
+    df = pd.read_csv("data/sample_local.csv", index_col=0)
     print(f"\n1. Loaded matrix: {df.shape[0]}x{df.shape[1]}")
     print(f"   Labels: {df.index.tolist()}")
 

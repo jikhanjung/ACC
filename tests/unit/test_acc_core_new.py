@@ -200,7 +200,7 @@ class TestPlaceFirstTwoAreas:
 
     def test_perfect_similarity(self):
         """완벽한 유사도 (sub=1.0, inc=1.0)"""
-        cluster = place_first_two_areas("A", "B", sub_sim=1.0, inc_sim=1.0, unit=1.0)
+        cluster = place_first_two_areas("A", "B", local_sim=1.0, global_sim=1.0, unit=1.0)
 
         assert cluster['members'] == {"A", "B"}
         assert cluster['angle'] == 0.0  # 180 * (1 - 1.0) = 0
@@ -208,21 +208,21 @@ class TestPlaceFirstTwoAreas:
 
     def test_medium_similarity(self):
         """중간 유사도 (sub=0.5, inc=0.5)"""
-        cluster = place_first_two_areas("A", "B", sub_sim=0.5, inc_sim=0.5, unit=1.0)
+        cluster = place_first_two_areas("A", "B", local_sim=0.5, global_sim=0.5, unit=1.0)
 
         assert cluster['angle'] == 90.0  # 180 * (1 - 0.5) = 90
         assert cluster['diameter'] == 2.0  # 1.0 / 0.5 = 2.0
 
     def test_zero_similarity(self):
         """0 유사도 (sub=0.0, inc=0.0)"""
-        cluster = place_first_two_areas("A", "B", sub_sim=0.0, inc_sim=0.0, unit=1.0)
+        cluster = place_first_two_areas("A", "B", local_sim=0.0, global_sim=0.0, unit=1.0)
 
         assert cluster['angle'] == 180.0  # 180 * (1 - 0.0) = 180
-        assert cluster['diameter'] == 100.0  # inc_sim=0 방지용 큰 값
+        assert cluster['diameter'] == 100.0  # global_sim=0 방지용 큰 값
 
     def test_positions_on_circle(self):
         """영역들이 원 위에 올바르게 배치되는지 확인"""
-        cluster = place_first_two_areas("A", "B", sub_sim=0.5, inc_sim=1.0, unit=1.0)
+        cluster = place_first_two_areas("A", "B", local_sim=0.5, global_sim=1.0, unit=1.0)
 
         # radius = 0.5, angle = 90도
         # area1: -45도, area2: +45도
@@ -239,7 +239,7 @@ class TestPlaceFirstTwoAreas:
 
     def test_cluster_structure(self):
         """Cluster가 올바른 구조를 가지는지 확인"""
-        cluster = place_first_two_areas("J", "T", sub_sim=0.9, inc_sim=0.8, unit=1.0)
+        cluster = place_first_two_areas("J", "T", local_sim=0.9, global_sim=0.8, unit=1.0)
 
         assert 'members' in cluster
         assert 'center' in cluster
@@ -248,13 +248,13 @@ class TestPlaceFirstTwoAreas:
         assert 'angle' in cluster
         assert 'points' in cluster
         assert 'structure' in cluster
-        assert 'sub_sim' in cluster
-        assert 'inc_sim' in cluster
+        assert 'local_sim' in cluster
+        assert 'global_sim' in cluster
 
     def test_unit_parameter(self):
         """다양한 unit 값"""
-        cluster1 = place_first_two_areas("A", "B", sub_sim=0.5, inc_sim=0.5, unit=1.0)
-        cluster2 = place_first_two_areas("A", "B", sub_sim=0.5, inc_sim=0.5, unit=2.0)
+        cluster1 = place_first_two_areas("A", "B", local_sim=0.5, global_sim=0.5, unit=1.0)
+        cluster2 = place_first_two_areas("A", "B", local_sim=0.5, global_sim=0.5, unit=2.0)
 
         # Unit이 2배면 diameter도 2배
         assert abs(cluster2['diameter'] - cluster1['diameter'] * 2.0) < 0.01

@@ -23,7 +23,7 @@ Merge Point Hover
 
 * **Cluster**: 병합된 영역들
 * **Angle**: 극좌표 각도
-* **Sub sim**: Subordinate similarity
+* **Sub sim**: Local similarity
 
 Branch Swap
 ~~~~~~~~~~~
@@ -104,8 +104,8 @@ Dendrogram과 ACC 시각화를 이미지 파일로 저장할 수 있습니다.
 기본 파일명
 ~~~~~~~~~~~
 
-* **Subordinate Dendrogram**: ``Subordinate_dendrogram.png``
-* **Inclusive Dendrogram**: ``Inclusive_dendrogram.png``
+* **Local Dendrogram**: ``Local_dendrogram.png``
+* **Global Dendrogram**: ``Global_dendrogram.png``
 * **ACC Visualization**: ``ACC_visualization.png``
 
 파일명은 저장 시 자유롭게 변경 가능합니다.

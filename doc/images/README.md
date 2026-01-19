@@ -18,8 +18,8 @@
 - **크기**: 1800x900 (전체 화면)
 - **내용**: 샘플 CSV 두 개 로드 후 화면
 - **촬영 방법**:
-  1. `data/sample_subordinate.csv` 로드
-  2. `data/sample_inclusive.csv` 로드
+  1. `data/sample_local.csv` 로드
+  2. `data/sample_global.csv` 로드
   3. Dendrogram이 자동으로 표시된 상태
   4. 전체 창 캡처
 
@@ -39,7 +39,7 @@
 - **크기**: 600x400 (Matrix 영역만 확대)
 - **내용**: Matrix 테이블 편집 및 툴팁
 - **촬영 방법**:
-  1. Subordinate Matrix의 한 셀을 더블클릭하여 편집 모드
+  1. Local Matrix의 한 셀을 더블클릭하여 편집 모드
   2. 회색 셀(대각선 또는 Lower triangle)에 마우스 올려 툴팁 표시
   3. Matrix 영역만 확대하여 캡처
 

@@ -17,9 +17,9 @@ from acc_utils import (
 class TestSimilarityToDistance:
     """Tests for similarity_to_distance function"""
 
-    def test_dict_matrix_conversion(self, simple_abc_sub_matrix):
+    def test_dict_matrix_conversion(self, simple_abc_local_matrix):
         """Dict matrix를 distance matrix로 변환"""
-        dist_matrix, labels = similarity_to_distance(simple_abc_sub_matrix)
+        dist_matrix, labels = similarity_to_distance(simple_abc_local_matrix)
 
         assert isinstance(dist_matrix, np.ndarray)
         assert len(labels) == 3
@@ -58,16 +58,16 @@ class TestSimilarityToDistance:
 class TestValidateSimilarityMatrix:
     """Tests for validate_similarity_matrix function"""
 
-    def test_valid_matrix_dict(self, simple_abc_sub_matrix):
+    def test_valid_matrix_dict(self, simple_abc_local_matrix):
         """유효한 dict matrix 검증 통과"""
         # Dict를 array로 변환
-        labels = sorted(simple_abc_sub_matrix.keys())
+        labels = sorted(simple_abc_local_matrix.keys())
         n = len(labels)
         arr = np.eye(n)
         for i, label1 in enumerate(labels):
             for j, label2 in enumerate(labels):
-                if label1 in simple_abc_sub_matrix and label2 in simple_abc_sub_matrix[label1]:
-                    arr[i, j] = simple_abc_sub_matrix[label1][label2]
+                if label1 in simple_abc_local_matrix and label2 in simple_abc_local_matrix[label1]:
+                    arr[i, j] = simple_abc_local_matrix[label1][label2]
 
         valid, msg = validate_similarity_matrix(arr)
         assert valid
@@ -105,12 +105,12 @@ class TestValidateSimilarityMatrix:
 class TestDictMatrixFromDataframe:
     """Tests for dict_matrix_from_dataframe function"""
 
-    def test_dataframe_conversion(self, sample_sub_df):
+    def test_dataframe_conversion(self, sample_local_df):
         """DataFrame을 dict matrix로 변환"""
-        matrix = dict_matrix_from_dataframe(sample_sub_df)
+        matrix = dict_matrix_from_dataframe(sample_local_df)
 
         assert isinstance(matrix, dict)
-        assert len(matrix) == len(sample_sub_df)
+        assert len(matrix) == len(sample_local_df)
 
         # 모든 행이 dict인지 확인
         for row in matrix.values():
@@ -132,28 +132,28 @@ class TestDictMatrixFromDataframe:
 class TestMatrixToDendrogram:
     """Tests for matrix_to_dendrogram function"""
 
-    def test_creates_dendrogram(self, simple_abc_sub_matrix):
+    def test_creates_dendrogram(self, simple_abc_local_matrix):
         """Dendrogram 생성 확인"""
-        dendro, labels = matrix_to_dendrogram(simple_abc_sub_matrix, method='average')
+        dendro, labels = matrix_to_dendrogram(simple_abc_local_matrix, method='average')
 
         assert dendro is not None
         assert len(labels) == 3
         assert set(labels) == {"A", "B", "C"}
 
-    def test_dendrogram_structure(self, simple_abc_sub_matrix):
+    def test_dendrogram_structure(self, simple_abc_local_matrix):
         """Dendrogram 구조 검증"""
-        dendro, labels = matrix_to_dendrogram(simple_abc_sub_matrix, method='average')
+        dendro, labels = matrix_to_dendrogram(simple_abc_local_matrix, method='average')
 
         # Root는 모든 멤버를 포함해야 함
         assert len(dendro.members) == 3
         assert dendro.members == {"A", "B", "C"}
 
-    def test_different_methods(self, simple_abc_sub_matrix):
+    def test_different_methods(self, simple_abc_local_matrix):
         """다양한 linkage method 테스트"""
         methods = ['average', 'single', 'complete']
 
         for method in methods:
-            dendro, labels = matrix_to_dendrogram(simple_abc_sub_matrix, method=method)
+            dendro, labels = matrix_to_dendrogram(simple_abc_local_matrix, method=method)
             assert dendro is not None
             assert len(dendro.members) == 3
 

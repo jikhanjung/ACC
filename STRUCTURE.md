@@ -25,8 +25,8 @@ ACC/
 ├── build.py                  # 빌드 스크립트
 │
 ├── data/                     # 샘플 데이터 파일
-│   ├── sample_subordinate.csv
-│   └── sample_inclusive.csv
+│   ├── sample_local.csv
+│   └── sample_global.csv
 │
 ├── tests/                    # 테스트 코드
 │   ├── conftest.py          # Pytest fixtures

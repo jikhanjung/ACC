@@ -150,7 +150,7 @@ class TestExtractClustersFromDendro:
 
         # Root cluster 찾기
         root_cluster = [c for c in clusters if c['members'] == {"A", "B"}][0]
-        assert root_cluster['sim_sub'] == 0.9
+        assert root_cluster['sim_local'] == 0.9
 
     def test_complex_tree(self):
         """복잡한 tree 구조"""
@@ -182,8 +182,8 @@ class TestExtractClustersFromDendro:
         cluster = clusters[0]
 
         assert 'members' in cluster
-        assert 'sim_sub' in cluster
-        assert 'sim_inc' in cluster
+        assert 'sim_local' in cluster
+        assert 'sim_global' in cluster
         assert 'diameter' in cluster
         assert 'theta' in cluster
         assert 'center' in cluster
@@ -193,61 +193,61 @@ class TestExtractClustersFromDendro:
 class TestDecorateClusters:
     """Tests for decorate_clusters"""
 
-    def test_decorate_with_inc_dendro(self):
-        """Inclusive dendrogram으로 cluster 장식"""
-        # Subordinate tree
+    def test_decorate_with_global_dendro(self):
+        """Global dendrogram으로 cluster 장식"""
+        # Local tree
         sub_root = DendroNode(["A", "B"], sim=0.9)
 
-        # Inclusive tree
+        # Global tree
         inc_root = DendroNode(["A", "B"], sim=0.8)
 
         # Extract clusters
-        clusters = [{'members': {"A", "B"}, 'sim_sub': 0.9}]
+        clusters = [{'members': {"A", "B"}, 'sim_local': 0.9}]
 
         # Decorate
-        inc_matrix = {"A": {"B": 0.8}, "B": {"A": 0.8}}
-        decorate_clusters(clusters, inc_root, inc_matrix, unit=1.0)
+        global_matrix = {"A": {"B": 0.8}, "B": {"A": 0.8}}
+        decorate_clusters(clusters, inc_root, global_matrix, unit=1.0)
 
         cluster = clusters[0]
-        assert cluster['sim_inc'] == 0.8
+        assert cluster['sim_global'] == 0.8
         assert 'diameter' in cluster
         assert 'theta' in cluster
 
     def test_diameter_calculation(self):
         """Diameter 계산 검증"""
-        clusters = [{'members': {"A", "B"}, 'sim_sub': 0.9}]
+        clusters = [{'members': {"A", "B"}, 'sim_local': 0.9}]
         inc_root = DendroNode(["A", "B"], sim=0.8)
-        inc_matrix = {"A": {"B": 0.8}, "B": {"A": 0.8}}
+        global_matrix = {"A": {"B": 0.8}, "B": {"A": 0.8}}
 
-        decorate_clusters(clusters, inc_root, inc_matrix, unit=1.0)
+        decorate_clusters(clusters, inc_root, global_matrix, unit=1.0)
 
         cluster = clusters[0]
-        # diameter = unit / sim_inc = 1.0 / 0.8 = 1.25
+        # diameter = unit / sim_global = 1.0 / 0.8 = 1.25
         expected_diameter = 1.0 / 0.8
         assert abs(cluster['diameter'] - expected_diameter) < 0.01
 
     def test_theta_calculation(self):
         """Theta 계산 검증"""
-        clusters = [{'members': {"A", "B"}, 'sim_sub': 0.9}]
+        clusters = [{'members': {"A", "B"}, 'sim_local': 0.9}]
         inc_root = DendroNode(["A", "B"], sim=0.8)
-        inc_matrix = {"A": {"B": 0.8}, "B": {"A": 0.8}}
+        global_matrix = {"A": {"B": 0.8}, "B": {"A": 0.8}}
 
-        decorate_clusters(clusters, inc_root, inc_matrix, unit=1.0)
+        decorate_clusters(clusters, inc_root, global_matrix, unit=1.0)
 
         cluster = clusters[0]
-        # theta = 180 * (1 - sim_sub) = 180 * (1 - 0.9) = 18
+        # theta = 180 * (1 - sim_local) = 180 * (1 - 0.9) = 18
         expected_theta = 180 * (1 - 0.9)
         assert abs(cluster['theta'] - expected_theta) < 0.01
 
     def test_fallback_to_matrix(self):
         """Dendrogram에 없는 cluster는 matrix 사용"""
-        # Cluster가 inc_dendro에 없는 경우
-        clusters = [{'members': {"A", "B"}, 'sim_sub': 0.9}]
+        # Cluster가 global_dendro에 없는 경우
+        clusters = [{'members': {"A", "B"}, 'sim_local': 0.9}]
         inc_root = DendroNode(["X", "Y"], sim=0.8)  # 다른 members
-        inc_matrix = {"A": {"B": 0.7}, "B": {"A": 0.7}}
+        global_matrix = {"A": {"B": 0.7}, "B": {"A": 0.7}}
 
-        decorate_clusters(clusters, inc_root, inc_matrix, unit=1.0)
+        decorate_clusters(clusters, inc_root, global_matrix, unit=1.0)
 
         cluster = clusters[0]
         # Matrix의 평균값 사용: 0.7
-        assert cluster['sim_inc'] == 0.7
+        assert cluster['sim_global'] == 0.7

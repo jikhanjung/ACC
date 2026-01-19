@@ -4,20 +4,20 @@ FAQ
 일반 질문
 ---------
 
-Q1: Subordinate와 Inclusive similarity의 차이는?
+Q1: Local와 Global similarity의 차이는?
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 **A**:
 
-* **Subordinate**: 주요 계층 구조를 나타냄 (각도 결정)
-* **Inclusive**: 보조 유사도 정보 (반지름 결정)
+* **Local**: 주요 계층 구조를 나타냄 (각도 결정)
+* **Global**: 보조 유사도 정보 (반지름 결정)
 
 두 가지 다른 관점의 유사도를 결합하여 더 풍부한 시각화를 생성합니다.
 
 Q2: 동일한 데이터를 두 번 사용해도 되나요?
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-**A**: 네, 가능합니다. 같은 CSV를 Subordinate와 Inclusive 모두에 로드하면:
+**A**: 네, 가능합니다. 같은 CSV를 Local와 Global 모두에 로드하면:
 
 * 각도와 반지름이 동일한 유사도로 결정됨
 * 단순한 계층 구조 시각화 가능
@@ -27,7 +27,7 @@ Q3: 라벨 순서가 중요한가요?
 
 **A**: 네, 중요합니다.
 
-* Subordinate와 Inclusive matrix의 라벨 순서가 동일해야 함
+* Local와 Global matrix의 라벨 순서가 동일해야 함
 * 순서가 다르면 오류 발생
 * Matrix 값은 라벨 기준으로 매칭됨
 
@@ -107,12 +107,12 @@ Q9: 데이터를 프로그래밍 방식으로 입력할 수 있나요?
    from acc_core import build_acc, DendroNode
 
    # Dendrogram 구조 생성
-   sub_dendro = DendroNode(...)
-   inc_dendro = DendroNode(...)
-   inc_matrix = {...}
+   local_dendro = DendroNode(...)
+   global_dendro = DendroNode(...)
+   global_matrix = {...}
 
    # ACC 실행
-   result = build_acc(sub_dendro, inc_dendro, inc_matrix)
+   result = build_acc(local_dendro, global_dendro, global_matrix)
 
    # 결과 접근
    print(result["points"])  # 좌표

@@ -5,7 +5,7 @@ Test ACC iterative algorithm with logging
 from acc_core_new import build_acc_iterative
 
 # Example matrices
-sub_matrix = {
+local_matrix = {
     "J": {"T": 0.9, "Y": 0.8, "N": 0.4, "O": 0.35, "Q": 0.36},
     "T": {"J": 0.9, "Y": 0.8, "N": 0.38, "O": 0.33, "Q": 0.34},
     "Y": {"J": 0.8, "T": 0.8, "N": 0.37, "O": 0.32, "Q": 0.33},
@@ -14,7 +14,7 @@ sub_matrix = {
     "Q": {}
 }
 
-inc_matrix = {
+global_matrix = {
     "J": {"T": 0.88, "Y": 0.82, "N": 0.4, "O": 0.35, "Q": 0.36},
     "T": {"J": 0.88, "Y": 0.80, "N": 0.38, "O": 0.33, "Q": 0.34},
     "Y": {"J": 0.82, "T": 0.80, "N": 0.37, "O": 0.32, "Q": 0.33},
@@ -25,7 +25,7 @@ inc_matrix = {
 
 print("Running ACC Iterative Algorithm with detailed logging...\n")
 
-steps = build_acc_iterative(sub_matrix, inc_matrix, unit=1.0, method='average')
+steps = build_acc_iterative(local_matrix, global_matrix, unit=1.0, method='average')
 
 print(f"\n\nFinal Summary:")
 print(f"Total steps: {len(steps)}")

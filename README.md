@@ -7,7 +7,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
 
-ACC는 두 종류의 덴드로그램(하위 subordinate, 포괄 inclusive)에서 유사도 정보를 결합해, 클러스터 간의 상대적 관계를 원형 도식(concentric circles)으로 시각화하는 알고리즘입니다.
+ACC는 두 종류의 덴드로그램(하위 local, 포괄 global)에서 유사도 정보를 결합해, 클러스터 간의 상대적 관계를 원형 도식(concentric circles)으로 시각화하는 알고리즘입니다.
 
 ---
 
@@ -28,7 +28,7 @@ ACC는 두 종류의 덴드로그램(하위 subordinate, 포괄 inclusive)에서
 ## 🎯 주요 기능
 
 ### 핵심 알고리즘
-- **이중 덴드로그램 분석**: Subordinate와 Inclusive 두 종류의 덴드로그램 결합
+- **이중 덴드로그램 분석**: Local와 Global 두 종류의 덴드로그램 결합
 - **기하학적 변환**: 유사도 → 지름(diameter)과 각도(theta)로 변환
 - **계층적 시각화**: Concentric circles로 클러스터 관계 표현
 - **결정론적 처리**: 동일 입력 → 동일 출력 보장
@@ -112,15 +112,15 @@ python acc_gui.py
 
 #### 3단계 워크플로우
 
-**Step 1: Subordinate Matrix 로드**
-1. "Subordinate Similarity Matrix" 섹션에서 **Load CSV** 클릭
-2. `data/sample_subordinate.csv` 파일 선택
+**Step 1: Local Matrix 로드**
+1. "Local Similarity Matrix" 섹션에서 **Load CSV** 클릭
+2. `data/sample_local.csv` 파일 선택
 3. Matrix 데이터 확인
 4. **Dendrogram 자동 생성** - 계층적 클러스터링 구조 확인
 
-**Step 2: Inclusive Matrix 로드**
-1. "Inclusive Similarity Matrix" 섹션에서 **Load CSV** 클릭
-2. `data/sample_inclusive.csv` 파일 선택
+**Step 2: Global Matrix 로드**
+1. "Global Similarity Matrix" 섹션에서 **Load CSV** 클릭
+2. `data/sample_global.csv` 파일 선택
 3. Matrix 데이터 확인
 4. **Dendrogram 자동 생성** - 대안적 유사도 구조 확인
 
@@ -138,18 +138,18 @@ from acc_utils import matrix_to_dendrogram
 import pandas as pd
 
 # CSV에서 Matrix 로드
-sub_matrix = pd.read_csv('data/sample_subordinate.csv', index_col=0)
-inc_matrix = pd.read_csv('data/sample_inclusive.csv', index_col=0)
+local_matrix = pd.read_csv('data/sample_local.csv', index_col=0)
+global_matrix = pd.read_csv('data/sample_global.csv', index_col=0)
 
 # Dendrogram 생성
-sub_dendro = matrix_to_dendrogram(sub_matrix)
-inc_dendro = matrix_to_dendrogram(inc_matrix)
+local_dendro = matrix_to_dendrogram(local_matrix)
+global_dendro = matrix_to_dendrogram(global_matrix)
 
 # ACC 알고리즘 실행
 result = build_acc(
-    sub_dendro,
-    inc_dendro,
-    inc_matrix.to_dict(),
+    local_dendro,
+    global_dendro,
+    global_matrix.to_dict(),
     unit=1.0
 )
 

@@ -5,14 +5,14 @@ Test ACC step-by-step algorithm
 from acc_core import DendroNode, build_acc_steps
 
 # Create sample dendrograms (same as in acc_core.py example)
-# Subordinate dendrogram: (((J,T),Y),(N,(O,Q)))
+# Local dendrogram: (((J,T),Y),(N,(O,Q)))
 jt = DendroNode(["J", "T"], sim=0.9)
 jty = DendroNode(["J", "T", "Y"], sim=0.8, left=jt, right=DendroNode(["Y"], sim=1.0))
 oq = DendroNode(["O", "Q"], sim=0.85)
 noq = DendroNode(["N", "O", "Q"], sim=0.75, left=DendroNode(["N"], sim=1.0), right=oq)
 sub_root = DendroNode(["J", "T", "Y", "N", "O", "Q"], sim=0.6, left=jty, right=noq)
 
-# Inclusive dendrogram
+# Global dendrogram
 jt_inc = DendroNode(["J", "T"], sim=0.88)
 jy_inc = DendroNode(["J", "Y"], sim=0.82)
 jty_inc = DendroNode(["J", "T", "Y"], sim=0.78, left=jt_inc, right=jy_inc)
@@ -21,8 +21,8 @@ n_inc = DendroNode(["N"], sim=1.0)
 noq_inc = DendroNode(["N", "O", "Q"], sim=0.7, left=n_inc, right=oq_inc)
 inc_root = DendroNode(["J", "T", "Y", "N", "O", "Q"], sim=0.55, left=jty_inc, right=noq_inc)
 
-# Inclusive similarity matrix
-inc_matrix = {
+# Global similarity matrix
+global_matrix = {
     "J": {"T": 0.88, "Y": 0.82, "N": 0.4, "O": 0.35, "Q": 0.36},
     "T": {"J": 0.88, "Y": 0.80, "N": 0.38, "O": 0.33, "Q": 0.34},
     "Y": {"J": 0.82, "T": 0.80, "N": 0.37, "O": 0.32, "Q": 0.33},
@@ -35,7 +35,7 @@ print("Testing ACC Step-by-Step Algorithm")
 print("="*60)
 
 # Run the step-by-step algorithm
-steps = build_acc_steps(sub_root, inc_root, inc_matrix, unit=1.0)
+steps = build_acc_steps(sub_root, inc_root, global_matrix, unit=1.0)
 
 print(f"\nTotal steps generated: {len(steps)}\n")
 
@@ -51,8 +51,8 @@ for step_info in steps:
     print(f"  Members: {sorted(cluster['members'])}")
     print(f"  Diameter: {cluster['diameter']:.3f}")
     print(f"  Theta: {cluster['theta']:.2f}°")
-    print(f"  sim_sub: {cluster['sim_sub']:.3f}")
-    print(f"  sim_inc: {cluster['sim_inc']:.3f}")
+    print(f"  sim_local: {cluster['sim_local']:.3f}")
+    print(f"  sim_global: {cluster['sim_global']:.3f}")
 
     if step_info['highlighted_members']:
         print(f"\nHighlighted (new) members: {sorted(step_info['highlighted_members'])}")

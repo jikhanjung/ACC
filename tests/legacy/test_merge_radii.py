@@ -5,7 +5,7 @@ Verify that merge_two_clusters preserves all radii (concentric circles)
 from acc_core_new import build_acc_iterative
 import math
 
-sub_matrix = {
+local_matrix = {
     "J": {"T": 0.9, "Y": 0.8, "N": 0.4, "O": 0.35, "Q": 0.36},
     "T": {"J": 0.9, "Y": 0.8, "N": 0.38, "O": 0.33, "Q": 0.34},
     "Y": {"J": 0.8, "T": 0.8, "N": 0.37, "O": 0.32, "Q": 0.33},
@@ -14,7 +14,7 @@ sub_matrix = {
     "Q": {}
 }
 
-inc_matrix = {
+global_matrix = {
     "J": {"T": 0.88, "Y": 0.82, "N": 0.4, "O": 0.35, "Q": 0.36},
     "T": {"J": 0.88, "Y": 0.80, "N": 0.38, "O": 0.33, "Q": 0.34},
     "Y": {"J": 0.82, "T": 0.80, "N": 0.37, "O": 0.32, "Q": 0.33},
@@ -23,7 +23,7 @@ inc_matrix = {
     "Q": {}
 }
 
-steps = build_acc_iterative(sub_matrix, inc_matrix, unit=1.0)
+steps = build_acc_iterative(local_matrix, global_matrix, unit=1.0)
 
 print("="*70)
 print("RADIUS PRESERVATION VERIFICATION")

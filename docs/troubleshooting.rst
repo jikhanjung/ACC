@@ -35,7 +35,7 @@
 오류: "Labels do not match"
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-**원인**: Subordinate와 Inclusive matrix의 라벨이 다름
+**원인**: Local와 Global matrix의 라벨이 다름
 
 **해결**:
 
@@ -46,10 +46,10 @@
 
 .. code-block:: text
 
-   # Subordinate: J, T, Y, N, O, Q
-   # Inclusive:   J, T, Y, N, Q, O  ← 순서 다름
+   # Local: J, T, Y, N, O, Q
+   # Global:   J, T, Y, N, Q, O  ← 순서 다름
 
-   → Inclusive를 J, T, Y, N, O, Q 순서로 재정렬
+   → Global를 J, T, Y, N, O, Q 순서로 재정렬
 
 오류: "Value out of range"
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~

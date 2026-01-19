@@ -16,7 +16,7 @@ Similarity matrix의 편집 기능 개선 및 area (row/column entry) 관리 기
 ### 2. Area List 편집 기능
 - **다이얼로그 생성**: Area 추가/수정/삭제를 위한 별도 다이얼로그
 - **버튼 추가**: "Edit Area List" 버튼을 Load CSV 옆에 배치
-- **공유 Area List**: Subordinate와 Inclusive가 동일한 area list 사용
+- **공유 Area List**: Local와 Global가 동일한 area list 사용
   - 버튼은 하나만 필요
   - 변경 시 두 matrix 모두 업데이트
 
@@ -109,13 +109,13 @@ else:
 
 **MainWindow에 메서드 추가**:
 ```python
-def update_area_list(self, new_labels, new_sub_matrix, new_inc_matrix):
+def update_area_list(self, new_labels, new_local_matrix, new_global_matrix):
     """Update both matrices with new area list"""
-    # Update subordinate matrix
-    self.left_panel.sub_matrix_widget.update_matrix(new_labels, new_sub_matrix)
+    # Update local matrix
+    self.left_panel.local_matrix_widget.update_matrix(new_labels, new_local_matrix)
 
-    # Update inclusive matrix
-    self.left_panel.inc_matrix_widget.update_matrix(new_labels, new_inc_matrix)
+    # Update global matrix
+    self.left_panel.global_matrix_widget.update_matrix(new_labels, new_global_matrix)
 
     # Refresh dendrograms
     self.update_dendrograms()

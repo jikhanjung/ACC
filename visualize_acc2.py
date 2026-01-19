@@ -31,10 +31,10 @@ def visualize_acc2(acc2_data, title="ACC2: Dendrogram on Concentric Circles"):
     lines = acc2_data['lines']
     levels = acc2_data['levels']
 
-    # Create radius -> inc_sim mapping
+    # Create radius -> global_sim mapping
     radius_to_sim = {}
     for level in levels:
-        radius_to_sim[level['radius']] = level['inc_sim']
+        radius_to_sim[level['radius']] = level['global_sim']
 
     # Step 1: Draw all concentric circles
     circle_colors = plt.cm.rainbow(np.linspace(0, 1, len(circles)))
@@ -44,8 +44,8 @@ def visualize_acc2(acc2_data, title="ACC2: Dendrogram on Concentric Circles"):
         if radius == 0.5:
             label = "Areas"
         else:
-            inc_sim = radius_to_sim.get(radius, 0.0)
-            label = f"inc_sim={inc_sim:.3f}"
+            global_sim = radius_to_sim.get(radius, 0.0)
+            label = f"global_sim={global_sim:.3f}"
 
         circle = plt.Circle((0, 0), radius, fill=False,
                            edgecolor=circle_colors[idx],
@@ -118,13 +118,13 @@ def visualize_acc2(acc2_data, title="ACC2: Dendrogram on Concentric Circles"):
                fontweight='bold', color='darkblue')
 
     # Step 4: Draw merge points and store their info
-    merge_point_data = []  # Store (x, y, angle, sub_sim, cluster_id)
+    merge_point_data = []  # Store (x, y, angle, local_sim, cluster_id)
 
     # Create mapping from cluster_id to subordinate similarity
-    cluster_to_subsim = {}
+    cluster_to_localsim = {}
     for level in levels:
         cluster_id = f"[{level['cluster1']}, {level['cluster2']}]"
-        cluster_to_subsim[cluster_id] = level['sub_sim']
+        cluster_to_localsim[cluster_id] = level['local_sim']
 
     for cluster_id, mp in merge_points.items():
         angle = mp['angle']
@@ -138,8 +138,8 @@ def visualize_acc2(acc2_data, title="ACC2: Dendrogram on Concentric Circles"):
                   edgecolors='black', linewidth=1, alpha=0.6)
 
         # Store merge point data for hover
-        sub_sim = cluster_to_subsim.get(cluster_id, 0.0)
-        merge_point_data.append((x, y, angle, sub_sim, cluster_id))
+        local_sim = cluster_to_localsim.get(cluster_id, 0.0)
+        merge_point_data.append((x, y, angle, local_sim, cluster_id))
 
     # Set plot limits
     max_radius = max(circles)
@@ -195,18 +195,18 @@ def visualize_acc2(acc2_data, title="ACC2: Dendrogram on Concentric Circles"):
         min_dist = float('inf')
         closest_point = None
 
-        for x, y, angle, sub_sim, cluster_id in merge_point_data:
+        for x, y, angle, local_sim, cluster_id in merge_point_data:
             dist = ((event.xdata - x)**2 + (event.ydata - y)**2)**0.5
             if dist < min_dist:
                 min_dist = dist
-                closest_point = (x, y, angle, sub_sim, cluster_id)
+                closest_point = (x, y, angle, local_sim, cluster_id)
 
         # Show annotation if close enough (threshold based on axes limits)
         threshold = lim * 0.05  # 5% of axis limit
         if min_dist < threshold and closest_point:
-            x, y, angle, sub_sim, cluster_id = closest_point
+            x, y, angle, local_sim, cluster_id = closest_point
             annot.xy = (x, y)
-            text = f"{cluster_id}\nAngle: {angle:.1f}°\nSub sim: {sub_sim:.3f}"
+            text = f"{cluster_id}\nAngle: {angle:.1f}°\nSub sim: {local_sim:.3f}"
             annot.set_text(text)
             annot.set_visible(True)
         else:
@@ -223,15 +223,15 @@ def visualize_acc2(acc2_data, title="ACC2: Dendrogram on Concentric Circles"):
 
 if __name__ == "__main__":
     # Load sample data
-    sub_df = pd.read_csv('data/sample_subordinate.csv', index_col=0)
-    inc_df = pd.read_csv('data/sample_inclusive.csv', index_col=0)
+    local_df = pd.read_csv('data/sample_local.csv', index_col=0)
+    global_df = pd.read_csv('data/sample_global.csv', index_col=0)
 
-    sub_matrix = dict_matrix_from_dataframe(sub_df)
-    inc_matrix = dict_matrix_from_dataframe(inc_df)
+    local_matrix = dict_matrix_from_dataframe(local_df)
+    global_matrix = dict_matrix_from_dataframe(global_df)
 
     # Build ACC2
     print("Building ACC2...")
-    acc2_data = build_acc2(sub_matrix, inc_matrix)
+    acc2_data = build_acc2(local_matrix, global_matrix)
 
     # Visualize
     print("Visualizing ACC2...")

@@ -279,7 +279,7 @@ J───T [0.90]  ← Matrix의 0.9와 일치!
 
 ```bash
 $ python acc_gui.py
-# Load sample_subordinate.csv
+# Load sample_local.csv
 # Navigate through steps
 # Toggle "Show similarity values" checkbox
 ```

@@ -121,7 +121,7 @@ for area, new_angle in new_angles.items():
 ```
 Level 1: J + T
   Angle between J(10°) and T(28°) = 18°  (실제 값)
-Tooltip: [J, T] at 51.8°, sub_sim=0.900  (잘못된 표시)
+Tooltip: [J, T] at 51.8°, local_sim=0.900  (잘못된 표시)
 ```
 
 ### 2.2 원인 분석
@@ -132,7 +132,7 @@ for cluster_id, mp in merge_points.items():
     merge_angle = mp["angle"]  # 이건 merge point의 polar angle
 
     # 툴팁에 merge_angle을 표시 - 잘못된 값!
-    merge_point_data.append((x, y, merge_angle, sub_sim, cluster_id))
+    merge_point_data.append((x, y, merge_angle, local_sim, cluster_id))
 ```
 
 **문제점:**
@@ -168,8 +168,8 @@ if cluster_id in cluster_to_children:
             subtended_angle = 360 - subtended_angle
 
 # Store merge point data for hover
-sub_sim = cluster_to_subsim.get(cluster_id, 0.0)
-merge_point_data.append((x, y, merge_angle, subtended_angle, sub_sim, cluster_id))
+local_sim = cluster_to_subsim.get(cluster_id, 0.0)
+merge_point_data.append((x, y, merge_angle, subtended_angle, local_sim, cluster_id))
 ```
 
 **개선 사항:**
@@ -199,7 +199,7 @@ Merge point [J, T]: Angle: 18.0°, Sub sim: 0.900
 
 **증상:**
 - Matrix 값을 편집해도 dendrogram이나 ACC가 업데이트되지 않음
-- 예: J-T inclusive similarity를 0.88 → 0.5로 변경해도 변화 없음
+- 예: J-T global similarity를 0.88 → 0.5로 변경해도 변화 없음
 
 **시도한 작업:**
 1. Upper triangle에서 J-T 값을 0.5로 변경
@@ -324,7 +324,7 @@ if hasattr(self.parent(), "on_matrix_loaded"):
 
 ### 3.5 테스트 결과
 
-**테스트 케이스 1: J-T inclusive similarity 0.88 → 0.5 변경**
+**테스트 케이스 1: J-T global similarity 0.88 → 0.5 변경**
 - ✅ 즉시 재클러스터링
 - ✅ Dendrogram이 새로운 구조로 업데이트
 - ✅ ACC 생성 시 새로운 값 반영
@@ -562,9 +562,9 @@ print(f"[{self.matrix_type}] Clustering regenerated, moved to step {max_steps}")
 ```python
 # 제거됨
 print(f"[MainWindow] update_dendrogram: sub_step_mgr = {True/False}")
-print(f"[MainWindow] Subordinate dendrogram updated")
+print(f"[MainWindow] Local dendrogram updated")
 print(f"[MainWindow] update_dendrogram: inc_step_mgr = {True/False}")
-print(f"[MainWindow] Inclusive dendrogram updated")
+print(f"[MainWindow] Global dendrogram updated")
 ```
 
 **line 2619 제거:**
@@ -579,9 +579,9 @@ print(f"[MainWindow] clear_dendrogram called for {which}")
 ```python
 # 제거됨
 print(f"[LeftPanel] on_matrix_loaded called for {matrix_type}")
-print(f"[LeftPanel] Calling update_dendrogram('subordinate'/'inclusive')")
+print(f"[LeftPanel] Calling update_dendrogram('local'/'global')")
 print(f"[LeftPanel] on_matrix_modified called for {matrix_type}")
-print(f"[LeftPanel] Clearing subordinate/inclusive dendrogram")
+print(f"[LeftPanel] Clearing local/global dendrogram")
 ```
 
 #### Edit Area List 디버그 로그 (`acc_gui.py`)
@@ -605,13 +605,13 @@ print(f"Dialog closed with code: {result_code}")
 
 **Before:**
 ```
-[Subordinate] Updated J-T: 0.880 → 0.500
-[Subordinate] Regenerating clustering...
-[Subordinate] Clustering regenerated, moved to step 5
-[LeftPanel] on_matrix_loaded called for Subordinate
-[LeftPanel] Calling update_dendrogram('subordinate')
+[Local] Updated J-T: 0.880 → 0.500
+[Local] Regenerating clustering...
+[Local] Clustering regenerated, moved to step 5
+[LeftPanel] on_matrix_loaded called for Local
+[LeftPanel] Calling update_dendrogram('local')
 [MainWindow] update_dendrogram: sub_step_mgr = True
-[MainWindow] Subordinate dendrogram updated
+[MainWindow] Local dendrogram updated
 ```
 
 **After:**

@@ -67,6 +67,12 @@ from acc_utils import (
 from clustering_steps import ClusteringStepManager
 
 
+def compass_to_cart(r, angle_deg):
+    """Convert compass angle (0°=north, positive=clockwise) to cartesian coordinates"""
+    rad = math.radians(angle_deg)
+    return (r * math.sin(rad), r * math.cos(rad))
+
+
 def get_resource_path(relative_path):
     """Get absolute path to resource, works for dev and for PyInstaller"""
     try:
@@ -82,11 +88,11 @@ def get_resource_path(relative_path):
 class AreaListEditorDialog(QDialog):
     """Dialog for editing the list of areas (row/column labels)"""
 
-    def __init__(self, current_labels, sub_matrix_df, inc_matrix_df, parent=None):
+    def __init__(self, current_labels, local_matrix_df, global_matrix_df, parent=None):
         super().__init__(parent)
         self.current_labels = list(current_labels)
-        self.sub_matrix_df = sub_matrix_df.copy()
-        self.inc_matrix_df = inc_matrix_df.copy()
+        self.local_matrix_df = local_matrix_df.copy()
+        self.global_matrix_df = global_matrix_df.copy()
         self.modified = False
         self.init_ui()
 
@@ -102,7 +108,7 @@ class AreaListEditorDialog(QDialog):
         layout.addWidget(title)
 
         # Info label
-        info = QLabel("Areas must be the same for both Subordinate and Inclusive matrices.")
+        info = QLabel("Areas must be the same for both Local and Global matrices.")
         info.setStyleSheet("color: #666; font-size: 10px; font-style: italic;")
         info.setAlignment(Qt.AlignCenter)
         layout.addWidget(info)
@@ -254,8 +260,8 @@ class AreaListEditorDialog(QDialog):
 
         if n == 1:
             # First area - create new 1x1 matrices
-            self.sub_matrix_df = pd.DataFrame([[1.0]], index=[text], columns=[text])
-            self.inc_matrix_df = pd.DataFrame([[1.0]], index=[text], columns=[text])
+            self.local_matrix_df = pd.DataFrame([[1.0]], index=[text], columns=[text])
+            self.global_matrix_df = pd.DataFrame([[1.0]], index=[text], columns=[text])
         else:
             # Add to existing dataframes (new row and column with default value 0.5, diagonal 1.0)
             # Create new row/column data
@@ -265,13 +271,13 @@ class AreaListEditorDialog(QDialog):
             new_row_inc = pd.Series([0.5] * n, index=self.current_labels)
             new_row_inc[text] = 1.0  # Diagonal
 
-            # Add to subordinate matrix
-            self.sub_matrix_df = pd.concat([self.sub_matrix_df, pd.DataFrame([new_row_sub], index=[text])])
-            self.sub_matrix_df[text] = new_row_sub
+            # Add to local matrix
+            self.local_matrix_df = pd.concat([self.local_matrix_df, pd.DataFrame([new_row_sub], index=[text])])
+            self.local_matrix_df[text] = new_row_sub
 
-            # Add to inclusive matrix
-            self.inc_matrix_df = pd.concat([self.inc_matrix_df, pd.DataFrame([new_row_inc], index=[text])])
-            self.inc_matrix_df[text] = new_row_inc
+            # Add to global matrix
+            self.global_matrix_df = pd.concat([self.global_matrix_df, pd.DataFrame([new_row_inc], index=[text])])
+            self.global_matrix_df[text] = new_row_inc
 
         self.modified = True
         # Clear input field
@@ -308,8 +314,8 @@ class AreaListEditorDialog(QDialog):
         current_item.setText(text)
 
         # Update dataframes - rename both index and column
-        self.sub_matrix_df.rename(index={old_name: text}, columns={old_name: text}, inplace=True)
-        self.inc_matrix_df.rename(index={old_name: text}, columns={old_name: text}, inplace=True)
+        self.local_matrix_df.rename(index={old_name: text}, columns={old_name: text}, inplace=True)
+        self.global_matrix_df.rename(index={old_name: text}, columns={old_name: text}, inplace=True)
 
         self.modified = True
         # Clear selection and input
@@ -344,8 +350,8 @@ class AreaListEditorDialog(QDialog):
             self.area_list.takeItem(index)
 
             # Remove from both dataframes
-            self.sub_matrix_df.drop(index=area_name, columns=area_name, inplace=True)
-            self.inc_matrix_df.drop(index=area_name, columns=area_name, inplace=True)
+            self.local_matrix_df.drop(index=area_name, columns=area_name, inplace=True)
+            self.global_matrix_df.drop(index=area_name, columns=area_name, inplace=True)
 
             self.modified = True
             # Clear selection and input
@@ -357,8 +363,8 @@ class AreaListEditorDialog(QDialog):
         """Get the modified data"""
         return {
             "labels": self.current_labels,
-            "sub_matrix": self.sub_matrix_df,
-            "inc_matrix": self.inc_matrix_df,
+            "local_matrix": self.local_matrix_df,
+            "global_matrix": self.global_matrix_df,
             "modified": self.modified,
         }
 
@@ -484,7 +490,7 @@ class StepMatrixWidget(QWidget):
     def __init__(self, title="Matrix", parent=None, show_header=True):
         super().__init__(parent)
         self.title = title
-        self.matrix_type = title  # Store as matrix_type for consistency (e.g., "Subordinate", "Inclusive")
+        self.matrix_type = title  # Store as matrix_type for consistency (e.g., "Local", "Global")
         self.show_header = show_header
         self.matrix_data = None
         self.step_manager = None
@@ -1880,21 +1886,21 @@ class ACCVisualizationWidget(QWidget):
         lines = working_data["lines"]
         levels = working_data["levels"]
 
-        # Create radius -> inc_sim mapping
+        # Create radius -> global_sim mapping
         radius_to_sim = {}
         for level in levels:
-            radius_to_sim[level["radius"]] = level["inc_sim"]
+            radius_to_sim[level["radius"]] = level["global_sim"]
 
         # Step 1: Draw all concentric circles
         circle_colors = plt.cm.rainbow(np.linspace(0, 1, len(circles)))
 
         for idx, radius in enumerate(circles):
-            # Label with inclusive similarity instead of radius
+            # Label with global similarity instead of radius
             if radius == 0.5:
                 label = "Areas"
             else:
-                inc_sim = radius_to_sim.get(radius, 0.0)
-                label = f"inc_sim={inc_sim:.3f}"
+                global_sim = radius_to_sim.get(radius, 0.0)
+                label = f"global_sim={global_sim:.3f}"
 
             circle = plt.Circle(
                 (0, 0),
@@ -1918,10 +1924,13 @@ class ACCVisualizationWidget(QWidget):
                 angle_start = line["angle_start"]
                 angle_end = line["angle_end"]
 
-                # Convert to matplotlib's convention
-                mpl_angle_start = angle_start + 90
-                mpl_angle_end = angle_end + 90
+                # Convert from compass convention (0° = north, positive = clockwise)
+                # to matplotlib convention (0° = east, positive = counter-clockwise)
+                # Formula: mpl_angle = 90 - compass_angle
+                mpl_angle_start = 90 - angle_start
+                mpl_angle_end = 90 - angle_end
 
+                # Ensure proper arc direction (smaller to larger in matplotlib convention)
                 if mpl_angle_start > mpl_angle_end:
                     mpl_angle_start, mpl_angle_end = mpl_angle_end, mpl_angle_start
 
@@ -1951,9 +1960,9 @@ class ACCVisualizationWidget(QWidget):
                 if self.acc1_style and abs(r1 - innermost_radius) < 0.001:
                     continue
 
-                # Convert to cartesian
-                x1, y1 = pol2cart(r1, angle)
-                x2, y2 = pol2cart(r2, angle)
+                # Convert to cartesian using compass convention
+                x1, y1 = compass_to_cart(r1, angle)
+                x2, y2 = compass_to_cart(r2, angle)
 
                 ax.plot([x1, x2], [y1, y2], "k-", linewidth=2, alpha=0.8)
 
@@ -1966,34 +1975,37 @@ class ACCVisualizationWidget(QWidget):
             angle = pos["angle"]
             radius = pos["radius"]
 
-            # Convert to cartesian
-            x, y = pol2cart(radius, angle)
+            # Use stored x, y for area position (more accurate than recalculating)
+            # Scale to the actual radius in case it was modified
+            original_r = math.sqrt(pos["x"]**2 + pos["y"]**2) if (pos["x"]**2 + pos["y"]**2) > 0 else 1
+            scale = radius / original_r if original_r > 0 else 1
+            x, y = pos["x"] * scale, pos["y"] * scale
 
             # Draw area point
             ax.scatter(x, y, c="darkblue", s=200, zorder=10, edgecolors="black", linewidth=2)
 
             # Label area with dynamic offset based on max radius
             label_r = radius - label_offset
-            label_x, label_y = pol2cart(label_r, angle)
+            label_x, label_y = compass_to_cart(label_r, angle)
             ax.text(label_x, label_y, area, fontsize=14, ha="center", va="center", fontweight="bold", color="darkblue")
 
         # Step 4: Draw merge points (small red dots) and store their info
-        merge_point_data = []  # Store (x, y, merge_angle, subtended_angle, sub_sim, cluster_id)
+        merge_point_data = []  # Store (x, y, merge_angle, subtended_angle, local_sim, cluster_id)
 
-        # Create mapping from cluster_id to subordinate similarity and children
+        # Create mapping from cluster_id to local similarity and children
         cluster_to_subsim = {}
         cluster_to_children = {}
         for level in levels:
             cluster_id = f"[{level['cluster1']}, {level['cluster2']}]"
-            cluster_to_subsim[cluster_id] = level["sub_sim"]
+            cluster_to_subsim[cluster_id] = level["local_sim"]
             cluster_to_children[cluster_id] = (level["cluster1"], level["cluster2"])
 
         for cluster_id, mp in merge_points.items():
             merge_angle = mp["angle"]
             radius = mp["radius"]
 
-            # Convert to cartesian
-            x, y = pol2cart(radius, merge_angle)
+            # Convert to cartesian using compass convention
+            x, y = compass_to_cart(radius, merge_angle)
 
             # Draw merge point
             ax.scatter(x, y, c="red", s=50, zorder=9, edgecolors="black", linewidth=1, alpha=0.6)
@@ -2022,8 +2034,8 @@ class ACCVisualizationWidget(QWidget):
                         subtended_angle = 360 - subtended_angle
 
             # Store merge point data for hover
-            sub_sim = cluster_to_subsim.get(cluster_id, 0.0)
-            merge_point_data.append((x, y, merge_angle, subtended_angle, sub_sim, cluster_id))
+            local_sim = cluster_to_subsim.get(cluster_id, 0.0)
+            merge_point_data.append((x, y, merge_angle, subtended_angle, local_sim, cluster_id))
 
         # Set plot limits
         max_radius = max(circles)
@@ -2086,18 +2098,18 @@ class ACCVisualizationWidget(QWidget):
             min_dist = float("inf")
             closest_point = None
 
-            for x, y, merge_angle, subtended_angle, sub_sim, cluster_id in merge_point_data:
+            for x, y, merge_angle, subtended_angle, local_sim, cluster_id in merge_point_data:
                 dist = ((event.xdata - x) ** 2 + (event.ydata - y) ** 2) ** 0.5
                 if dist < min_dist:
                     min_dist = dist
-                    closest_point = (x, y, merge_angle, subtended_angle, sub_sim, cluster_id)
+                    closest_point = (x, y, merge_angle, subtended_angle, local_sim, cluster_id)
 
             # Show annotation if close enough (threshold based on axes limits)
             threshold = lim * 0.05  # 5% of axis limit
             if min_dist < threshold and closest_point:
-                x, y, merge_angle, subtended_angle, sub_sim, cluster_id = closest_point
+                x, y, merge_angle, subtended_angle, local_sim, cluster_id = closest_point
                 annot.xy = (x, y)
-                text = f"{cluster_id}\nAngle: {subtended_angle:.1f}°\nSub sim: {sub_sim:.3f}"
+                text = f"{cluster_id}\nAngle: {subtended_angle:.1f}°\nSub sim: {local_sim:.3f}"
                 annot.set_text(text)
                 annot.set_visible(True)
             else:
@@ -2122,11 +2134,11 @@ class ACCVisualizationWidget(QWidget):
             closest_point = None
             closest_level_idx = None
 
-            for x, y, merge_angle, subtended_angle, sub_sim, cluster_id in merge_point_data:
+            for x, y, merge_angle, subtended_angle, local_sim, cluster_id in merge_point_data:
                 dist = ((event.xdata - x) ** 2 + (event.ydata - y) ** 2) ** 0.5
                 if dist < min_dist:
                     min_dist = dist
-                    closest_point = (x, y, merge_angle, subtended_angle, sub_sim, cluster_id)
+                    closest_point = (x, y, merge_angle, subtended_angle, local_sim, cluster_id)
 
                     # Find level index for this cluster_id
                     for idx, level in enumerate(levels):
@@ -2189,9 +2201,9 @@ class LeftPanel(ColumnPanel):
         self.setup_content()
 
     def setup_content(self):
-        # Subordinate matrix section
+        # Local matrix section
         sub_header_layout = QHBoxLayout()
-        sub_label = QLabel("<b>Subordinate</b>")
+        sub_label = QLabel("<b>Local</b>")
         sub_header_layout.addWidget(sub_label)
         sub_header_layout.addStretch()
 
@@ -2213,11 +2225,11 @@ class LeftPanel(ColumnPanel):
         # Always enabled - can create area list from scratch
         sub_header_layout.addWidget(self.edit_areas_btn)
 
-        self.sub_matrix_widget = StepMatrixWidget("Subordinate", show_header=False)
-        sub_header_layout.addWidget(self.sub_matrix_widget.load_btn)
+        self.local_matrix_widget = StepMatrixWidget("Local", show_header=False)
+        sub_header_layout.addWidget(self.local_matrix_widget.load_btn)
         self.content_layout.addLayout(sub_header_layout)
 
-        self.content_layout.addWidget(self.sub_matrix_widget, stretch=1)
+        self.content_layout.addWidget(self.local_matrix_widget, stretch=1)
 
         # Separator line
         separator = QLabel()
@@ -2226,47 +2238,47 @@ class LeftPanel(ColumnPanel):
         separator.setMaximumHeight(2)
         self.content_layout.addWidget(separator)
 
-        # Inclusive matrix section
+        # Global matrix section
         inc_header_layout = QHBoxLayout()
-        inc_label = QLabel("<b>Inclusive</b>")
+        inc_label = QLabel("<b>Global</b>")
         inc_header_layout.addWidget(inc_label)
         inc_header_layout.addStretch()
 
-        self.inc_matrix_widget = StepMatrixWidget("Inclusive", show_header=False)
-        inc_header_layout.addWidget(self.inc_matrix_widget.load_btn)
+        self.global_matrix_widget = StepMatrixWidget("Global", show_header=False)
+        inc_header_layout.addWidget(self.global_matrix_widget.load_btn)
         self.content_layout.addLayout(inc_header_layout)
 
-        self.content_layout.addWidget(self.inc_matrix_widget, stretch=1)
+        self.content_layout.addWidget(self.global_matrix_widget, stretch=1)
 
     def on_matrix_loaded(self, matrix_type):
         """
         Called when a matrix is loaded
 
         Args:
-            matrix_type: 'Subordinate' or 'Inclusive'
+            matrix_type: 'Local' or 'Global'
         """
         main_window = self.window()
         if isinstance(main_window, MainWindow):
             # Update only the dendrogram for the loaded matrix
-            if matrix_type == "Subordinate":
-                main_window.update_dendrogram("subordinate")
-            elif matrix_type == "Inclusive":
-                main_window.update_dendrogram("inclusive")
+            if matrix_type == "Local":
+                main_window.update_dendrogram("local")
+            elif matrix_type == "Global":
+                main_window.update_dendrogram("global")
 
     def on_matrix_modified(self, matrix_type):
         """
         Called when a matrix value is modified
 
         Args:
-            matrix_type: 'Subordinate' or 'Inclusive'
+            matrix_type: 'Local' or 'Global'
         """
         main_window = self.window()
         if isinstance(main_window, MainWindow):
             # Clear the dendrogram
-            if matrix_type == "Subordinate":
-                main_window.clear_dendrogram("subordinate")
-            elif matrix_type == "Inclusive":
-                main_window.clear_dendrogram("inclusive")
+            if matrix_type == "Local":
+                main_window.clear_dendrogram("local")
+            elif matrix_type == "Global":
+                main_window.clear_dendrogram("global")
 
     def on_step_changed(self):
         """Called when step changes"""
@@ -2278,29 +2290,29 @@ class LeftPanel(ColumnPanel):
         """Open dialog to edit area list"""
         try:
             # Check if matrices are loaded
-            sub_loaded = self.sub_matrix_widget.is_loaded()
-            inc_loaded = self.inc_matrix_widget.is_loaded()
+            sub_loaded = self.local_matrix_widget.is_loaded()
+            inc_loaded = self.global_matrix_widget.is_loaded()
 
             if sub_loaded and inc_loaded:
                 # Both loaded - edit existing
 
                 # Get current labels (should be same for both)
-                sub_labels = self.sub_matrix_widget.get_labels()
-                inc_labels = self.inc_matrix_widget.get_labels()
+                local_labels = self.local_matrix_widget.get_labels()
+                global_labels = self.global_matrix_widget.get_labels()
 
                 # Verify they match
-                if sub_labels != inc_labels:
+                if local_labels != global_labels:
                     QMessageBox.warning(
                         self,
                         "Label Mismatch",
-                        "Subordinate and Inclusive matrices have different labels.\n"
+                        "Local and Global matrices have different labels.\n"
                         "Please reload the matrices to ensure consistency.",
                     )
                     return
 
                 # Get current matrices
-                sub_df = self.sub_matrix_widget.get_dataframe()
-                inc_df = self.inc_matrix_widget.get_dataframe()
+                local_df = self.local_matrix_widget.get_dataframe()
+                global_df = self.global_matrix_widget.get_dataframe()
 
             elif sub_loaded or inc_loaded:
                 # Only one loaded - warn user
@@ -2314,12 +2326,12 @@ class LeftPanel(ColumnPanel):
 
             else:
                 # Neither loaded - start from scratch
-                sub_labels = []
-                sub_df = pd.DataFrame()
-                inc_df = pd.DataFrame()
+                local_labels = []
+                local_df = pd.DataFrame()
+                global_df = pd.DataFrame()
 
             # Open dialog
-            dialog = AreaListEditorDialog(sub_labels, sub_df, inc_df, self)
+            dialog = AreaListEditorDialog(local_labels, local_df, global_df, self)
 
             result_code = dialog.exec_()
 
@@ -2328,8 +2340,8 @@ class LeftPanel(ColumnPanel):
 
                 if result["modified"] or len(result["labels"]) > 0:
                     # Update both matrices
-                    self.sub_matrix_widget.update_matrix(result["sub_matrix"])
-                    self.inc_matrix_widget.update_matrix(result["inc_matrix"])
+                    self.local_matrix_widget.update_matrix(result["local_matrix"])
+                    self.global_matrix_widget.update_matrix(result["global_matrix"])
 
                     # Notify main window to update dendrograms
                     main_window = self.window()
@@ -2341,7 +2353,7 @@ class LeftPanel(ColumnPanel):
                         "Success",
                         f"Area list {'created' if not sub_loaded and not inc_loaded else 'updated'} successfully!\n\n"
                         f"Total areas: {len(result['labels'])}\n"
-                        f"Matrix size: {result['sub_matrix'].shape[0]}×{result['sub_matrix'].shape[1]}",
+                        f"Matrix size: {result['local_matrix'].shape[0]}×{result['local_matrix'].shape[1]}",
                     )
         except Exception as e:
             print(f"Error in edit_area_list: {e}")  # Debug
@@ -2359,9 +2371,9 @@ class CenterPanel(ColumnPanel):
         self.setup_content()
 
     def setup_content(self):
-        # Subordinate dendrogram
-        self.sub_dendro_widget = StepDendrogramWidget("Subordinate")
-        self.content_layout.addWidget(self.sub_dendro_widget, stretch=1)
+        # Local dendrogram
+        self.local_dendro_widget = StepDendrogramWidget("Local")
+        self.content_layout.addWidget(self.local_dendro_widget, stretch=1)
 
         # Separator line
         separator = QLabel()
@@ -2370,9 +2382,9 @@ class CenterPanel(ColumnPanel):
         separator.setMaximumHeight(2)
         self.content_layout.addWidget(separator)
 
-        # Inclusive dendrogram
-        self.inc_dendro_widget = StepDendrogramWidget("Inclusive")
-        self.content_layout.addWidget(self.inc_dendro_widget, stretch=1)
+        # Global dendrogram
+        self.global_dendro_widget = StepDendrogramWidget("Global")
+        self.content_layout.addWidget(self.global_dendro_widget, stretch=1)
 
 
 class RightPanel(ColumnPanel):
@@ -2509,10 +2521,36 @@ class RightPanel(ColumnPanel):
         self.acc2_acc1_style.setToolTip("Place areas on their first merge circle instead of innermost circle")
         options_layout.addWidget(self.acc2_acc1_style)
 
+        # Limit Angle checkbox
+        self.acc2_limit_angle = QCheckBox("Limit Angle:")
+        self.acc2_limit_angle.setToolTip("Scale angles to fit within max angle limit")
+        options_layout.addWidget(self.acc2_limit_angle)
+
+        # Max angle input
+        self.acc2_max_angle = QLineEdit("180")
+        self.acc2_max_angle.setFixedWidth(50)
+        self.acc2_max_angle.setStyleSheet("""
+            QLineEdit {
+                padding: 4px;
+                border: 1px solid #ccc;
+                border-radius: 3px;
+            }
+        """)
+        self.acc2_max_angle.setToolTip("Maximum total angular span (default: 180)")
+        self.acc2_max_angle.setEnabled(False)  # Disabled until checkbox is checked
+        options_layout.addWidget(self.acc2_max_angle)
+
+        # Connect checkbox to enable/disable input
+        self.acc2_limit_angle.stateChanged.connect(
+            lambda state: self.acc2_max_angle.setEnabled(state == 2)  # 2 = Qt.CheckState.Checked
+        )
+
         # Connect signals for real-time updates
         self.acc2_min_diameter.editingFinished.connect(self.on_acc2_options_changed)
         self.acc2_max_diameter.editingFinished.connect(self.on_acc2_options_changed)
         self.acc2_acc1_style.stateChanged.connect(self.on_acc2_options_changed)
+        self.acc2_limit_angle.stateChanged.connect(self.on_acc2_options_changed)
+        self.acc2_max_angle.editingFinished.connect(self.on_acc2_options_changed)
 
         options_layout.addStretch()
 
@@ -2560,9 +2598,9 @@ class RightPanel(ColumnPanel):
         main_window = self.window()
         if isinstance(main_window, MainWindow):
             # Only update if matrices are loaded
-            if not main_window.left_panel.sub_matrix_widget.is_loaded():
+            if not main_window.left_panel.local_matrix_widget.is_loaded():
                 return
-            if not main_window.left_panel.inc_matrix_widget.is_loaded():
+            if not main_window.left_panel.global_matrix_widget.is_loaded():
                 return
 
             # Validate inputs
@@ -2570,6 +2608,8 @@ class RightPanel(ColumnPanel):
                 min_diameter = float(self.acc2_min_diameter.text())
                 max_diameter = float(self.acc2_max_diameter.text())
                 acc1_style = self.acc2_acc1_style.isChecked()
+                limit_angle = self.acc2_limit_angle.isChecked()
+                max_angle = float(self.acc2_max_angle.text()) if limit_angle else None
 
                 if min_diameter <= 0 or max_diameter <= 0:
                     return  # Silently ignore invalid values during real-time updates
@@ -2577,8 +2617,11 @@ class RightPanel(ColumnPanel):
                 if min_diameter >= max_diameter:
                     return  # Silently ignore invalid values during real-time updates
 
+                if limit_angle and max_angle is not None and max_angle <= 0:
+                    return  # Silently ignore invalid values during real-time updates
+
                 # Regenerate ACC2 with new parameters
-                main_window.generate_acc2_with_options(min_diameter, max_diameter, acc1_style)
+                main_window.generate_acc2_with_options(min_diameter, max_diameter, acc1_style, max_angle)
 
             except ValueError:
                 pass  # Silently ignore invalid values during real-time updates
@@ -2632,21 +2675,21 @@ class MainWindow(QMainWindow):
         Update specific dendrogram(s)
 
         Args:
-            which: 'subordinate', 'inclusive', or 'both'
+            which: 'local', 'global', or 'both'
         """
-        if which in ("subordinate", "both"):
-            # Update subordinate dendrogram
-            sub_step_mgr = self.left_panel.sub_matrix_widget.get_step_manager()
+        if which in ("local", "both"):
+            # Update local dendrogram
+            sub_step_mgr = self.left_panel.local_matrix_widget.get_step_manager()
             if sub_step_mgr:
-                self.center_panel.sub_dendro_widget.set_step_manager(sub_step_mgr)
-                self.center_panel.sub_dendro_widget.set_step(self.left_panel.sub_matrix_widget.get_current_step())
+                self.center_panel.local_dendro_widget.set_step_manager(sub_step_mgr)
+                self.center_panel.local_dendro_widget.set_step(self.left_panel.local_matrix_widget.get_current_step())
 
-        if which in ("inclusive", "both"):
-            # Update inclusive dendrogram
-            inc_step_mgr = self.left_panel.inc_matrix_widget.get_step_manager()
+        if which in ("global", "both"):
+            # Update global dendrogram
+            inc_step_mgr = self.left_panel.global_matrix_widget.get_step_manager()
             if inc_step_mgr:
-                self.center_panel.inc_dendro_widget.set_step_manager(inc_step_mgr)
-                self.center_panel.inc_dendro_widget.set_step(self.left_panel.inc_matrix_widget.get_current_step())
+                self.center_panel.global_dendro_widget.set_step_manager(inc_step_mgr)
+                self.center_panel.global_dendro_widget.set_step(self.left_panel.global_matrix_widget.get_current_step())
 
     def update_dendrograms(self):
         """Update both dendrograms (for backward compatibility)"""
@@ -2657,51 +2700,51 @@ class MainWindow(QMainWindow):
         Clear dendrogram when matrix is modified
 
         Args:
-            which: 'subordinate' or 'inclusive'
+            which: 'local' or 'global'
         """
-        if which == "subordinate":
-            self.center_panel.sub_dendro_widget.clear_display()
-        elif which == "inclusive":
-            self.center_panel.inc_dendro_widget.clear_display()
+        if which == "local":
+            self.center_panel.local_dendro_widget.clear_display()
+        elif which == "global":
+            self.center_panel.global_dendro_widget.clear_display()
 
     def update_dendrogram_steps(self):
         """Update dendrogram display when step changes"""
-        # Update subordinate
-        sub_step = self.left_panel.sub_matrix_widget.get_current_step()
-        self.center_panel.sub_dendro_widget.set_step(sub_step)
+        # Update local
+        sub_step = self.left_panel.local_matrix_widget.get_current_step()
+        self.center_panel.local_dendro_widget.set_step(sub_step)
 
-        # Update inclusive
-        inc_step = self.left_panel.inc_matrix_widget.get_current_step()
-        self.center_panel.inc_dendro_widget.set_step(inc_step)
+        # Update global
+        inc_step = self.left_panel.global_matrix_widget.get_current_step()
+        self.center_panel.global_dendro_widget.set_step(inc_step)
 
     def generate_acc(self):
         """Generate ACC visualization"""
         try:
             # Check if both matrices are loaded
-            if not self.left_panel.sub_matrix_widget.is_loaded():
-                QMessageBox.warning(self, "Missing Data", "Please load the Subordinate Similarity Matrix first")
+            if not self.left_panel.local_matrix_widget.is_loaded():
+                QMessageBox.warning(self, "Missing Data", "Please load the Local Similarity Matrix first")
                 return
 
-            if not self.left_panel.inc_matrix_widget.is_loaded():
-                QMessageBox.warning(self, "Missing Data", "Please load the Inclusive Similarity Matrix first")
+            if not self.left_panel.global_matrix_widget.is_loaded():
+                QMessageBox.warning(self, "Missing Data", "Please load the Global Similarity Matrix first")
                 return
 
             # Get original matrices (not step matrices)
-            sub_df = self.left_panel.sub_matrix_widget.get_dataframe()
-            inc_df = self.left_panel.inc_matrix_widget.get_dataframe()
+            local_df = self.left_panel.local_matrix_widget.get_dataframe()
+            global_df = self.left_panel.global_matrix_widget.get_dataframe()
 
-            sub_matrix = dict_matrix_from_dataframe(sub_df)
-            inc_matrix = dict_matrix_from_dataframe(inc_df)
+            local_matrix = dict_matrix_from_dataframe(local_df)
+            global_matrix = dict_matrix_from_dataframe(global_df)
 
             # Validate matrices
-            valid, msg = validate_similarity_matrix(sub_matrix)
+            valid, msg = validate_similarity_matrix(local_matrix)
             if not valid:
-                QMessageBox.warning(self, "Invalid Subordinate Matrix", f"Subordinate matrix validation failed:\n{msg}")
+                QMessageBox.warning(self, "Invalid Local Matrix", f"Local matrix validation failed:\n{msg}")
                 return
 
-            valid, msg = validate_similarity_matrix(inc_matrix)
+            valid, msg = validate_similarity_matrix(global_matrix)
             if not valid:
-                QMessageBox.warning(self, "Invalid Inclusive Matrix", f"Inclusive matrix validation failed:\n{msg}")
+                QMessageBox.warning(self, "Invalid Global Matrix", f"Global matrix validation failed:\n{msg}")
                 return
 
             # Setup log capture
@@ -2719,7 +2762,7 @@ class MainWindow(QMainWindow):
 
             try:
                 # Run ACC algorithm step by step (NEW ITERATIVE ALGORITHM)
-                acc_steps = build_acc_from_matrices_iterative(sub_matrix, inc_matrix, unit=1.0, method="average")
+                acc_steps = build_acc_from_matrices_iterative(local_matrix, global_matrix, unit=1.0, method="average")
             finally:
                 # Remove handler and restore logger
                 logger.removeHandler(log_handler)
@@ -2761,45 +2804,48 @@ class MainWindow(QMainWindow):
             min_diameter = float(self.right_panel.acc2_min_diameter.text())
             max_diameter = float(self.right_panel.acc2_max_diameter.text())
             acc1_style = self.right_panel.acc2_acc1_style.isChecked()
+            limit_angle = self.right_panel.acc2_limit_angle.isChecked()
+            max_angle = float(self.right_panel.acc2_max_angle.text()) if limit_angle else None
         except:
             min_diameter = 1.0
             max_diameter = 2.0
             acc1_style = False
+            max_angle = None
 
-        self.generate_acc2_with_options(min_diameter, max_diameter, acc1_style)
+        self.generate_acc2_with_options(min_diameter, max_diameter, acc1_style, max_angle)
 
-    def generate_acc2_with_options(self, min_diameter, max_diameter, acc1_style=False):
-        """Generate ACC2 visualization with custom diameter range"""
+    def generate_acc2_with_options(self, min_diameter, max_diameter, acc1_style=False, max_angle=None):
+        """Generate ACC2 visualization with custom diameter range and optional angle limit"""
         try:
             # Check if both matrices are loaded
-            if not self.left_panel.sub_matrix_widget.is_loaded():
-                QMessageBox.warning(self, "Missing Data", "Please load the Subordinate Similarity Matrix first")
+            if not self.left_panel.local_matrix_widget.is_loaded():
+                QMessageBox.warning(self, "Missing Data", "Please load the Local Similarity Matrix first")
                 return
 
-            if not self.left_panel.inc_matrix_widget.is_loaded():
-                QMessageBox.warning(self, "Missing Data", "Please load the Inclusive Similarity Matrix first")
+            if not self.left_panel.global_matrix_widget.is_loaded():
+                QMessageBox.warning(self, "Missing Data", "Please load the Global Similarity Matrix first")
                 return
 
             # Get original matrices (not step matrices)
-            sub_df = self.left_panel.sub_matrix_widget.get_dataframe()
-            inc_df = self.left_panel.inc_matrix_widget.get_dataframe()
+            local_df = self.left_panel.local_matrix_widget.get_dataframe()
+            global_df = self.left_panel.global_matrix_widget.get_dataframe()
 
-            sub_matrix = dict_matrix_from_dataframe(sub_df)
-            inc_matrix = dict_matrix_from_dataframe(inc_df)
+            local_matrix = dict_matrix_from_dataframe(local_df)
+            global_matrix = dict_matrix_from_dataframe(global_df)
 
             # Validate matrices
-            valid, msg = validate_similarity_matrix(sub_matrix)
+            valid, msg = validate_similarity_matrix(local_matrix)
             if not valid:
-                QMessageBox.warning(self, "Invalid Subordinate Matrix", f"Subordinate matrix validation failed:\n{msg}")
+                QMessageBox.warning(self, "Invalid Local Matrix", f"Local matrix validation failed:\n{msg}")
                 return
 
-            valid, msg = validate_similarity_matrix(inc_matrix)
+            valid, msg = validate_similarity_matrix(global_matrix)
             if not valid:
-                QMessageBox.warning(self, "Invalid Inclusive Matrix", f"Inclusive matrix validation failed:\n{msg}")
+                QMessageBox.warning(self, "Invalid Global Matrix", f"Global matrix validation failed:\n{msg}")
                 return
 
-            # Build ACC2 with default parameters
-            acc2_data = build_acc2(sub_matrix, inc_matrix, unit=1.0)
+            # Build ACC2 with parameters (including optional angle limit)
+            acc2_data = build_acc2(local_matrix, global_matrix, unit=1.0, max_angle=max_angle)
 
             # Store ACC2 data for future option updates
             self.acc2_data = acc2_data
@@ -2841,8 +2887,8 @@ class MainWindow(QMainWindow):
                     new_r = min_radius + (old_r - original_min) / original_range * new_range
                     # Update radius
                     acc2_data["positions"][area]["radius"] = new_r
-                    # Recalculate x, y from new radius and existing angle
-                    new_x, new_y = pol2cart(new_r, pos["angle"])
+                    # Recalculate x, y from new radius and existing angle (using compass convention)
+                    new_x, new_y = compass_to_cart(new_r, pos["angle"])
                     acc2_data["positions"][area]["x"] = new_x
                     acc2_data["positions"][area]["y"] = new_y
 
@@ -2851,8 +2897,9 @@ class MainWindow(QMainWindow):
             self.right_panel.acc2_widget.plot_acc2(acc2_data, acc1_style=acc1_style)
 
             # No message box - just silently complete
+            angle_info = f", max angle: {max_angle}°" if max_angle else ""
             print(
-                f"[ACC2] Generated: {len(acc2_data['positions'])} areas, diameter range: {min_diameter:.1f}-{max_diameter:.1f}"
+                f"[ACC2] Generated: {len(acc2_data['positions'])} areas, diameter range: {min_diameter:.1f}-{max_diameter:.1f}{angle_info}"
             )
 
         except Exception as e:

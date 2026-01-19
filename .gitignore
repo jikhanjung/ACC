@@ -163,6 +163,10 @@ results/
 .claude/settings.local.json
 screenshot*.png
 
+# Temporary visualization files
+ACC_visualization_*.png
+acc2_visualization.png
+
 # Build and packaging
 InnoSetup/Output/
 *.iss
