@@ -5,6 +5,34 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+## [0.0.4] - 2026-02-10
+
+### Added
+- Manual release workflow (GitHub Actions)
+- InnoSetup installer EXE included in release artifacts
+- Resource path helper for PyInstaller data directory access
+- ACC1 style option
+- `semver` added to requirements
+
+### Changed
+- Bumped version to 0.0.4 (tagged as `v0.0.4-build.1`)
+- Improved InnoSetup installer configuration
+- Performance optimizations and UI improvements
+- Sphinx docs now include figure captions
+- PDF regenerated with Unicode fixes
+- Terminology unification and data structure refactor
+- Enforced Python 3.11+ requirement with `datetime.UTC`
+
+### Fixed
+- ACC2 swap bug
+- ACC2 options update live; area position scaling adjusted
+- Matrix edits now reflect in real time
+- Import issues
+- Build script no longer references missing images directory
+- PDF generation path and Unicode issues
+
 ## [0.0.3] - 2025-11-16
 
 ### Added
