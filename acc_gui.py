@@ -2,13 +2,15 @@
 ACC (Adaptive Cluster Circle) GUI Application
 PyQt5-based interface for visualizing hierarchical cluster relationships
 
-Three-column layout with step-by-step clustering visualization:
+Four-column layout with step-by-step clustering visualization:
+- Data: Raw presence/absence data (multi-sheet, period-based)
 - Left: Similarity Matrices (with step slider)
 - Center: Dendrograms (with step visualization)
 - Right: ACC Concentric Circles
 """
 
 # Import matplotlib components with proper backend setup
+import json
 import math
 import os
 import sys
@@ -17,6 +19,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 from PyQt5.QtCore import Qt, QTimer
+from PyQt5.QtGui import QBrush, QColor, QKeySequence
 from PyQt5.QtWidgets import (
     QAction,
     QApplication,
@@ -25,6 +28,7 @@ from PyQt5.QtWidgets import (
     QDialogButtonBox,
     QFileDialog,
     QHBoxLayout,
+    QInputDialog,
     QLabel,
     QLineEdit,
     QListWidget,
@@ -58,7 +62,7 @@ from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.figure import Figure
 from scipy.cluster.hierarchy import dendrogram
 
-from acc_core_acc2 import build_acc2, calculate_merge_points, generate_connection_lines, pol2cart
+from acc_core_acc2 import build_acc2, calculate_merge_points, generate_connection_lines
 from acc_utils import (
     build_acc_from_matrices_iterative,
     dict_matrix_from_dataframe,
@@ -1977,7 +1981,7 @@ class ACCVisualizationWidget(QWidget):
 
             # Use stored x, y for area position (more accurate than recalculating)
             # Scale to the actual radius in case it was modified
-            original_r = math.sqrt(pos["x"]**2 + pos["y"]**2) if (pos["x"]**2 + pos["y"]**2) > 0 else 1
+            original_r = math.sqrt(pos["x"] ** 2 + pos["y"] ** 2) if (pos["x"] ** 2 + pos["y"] ** 2) > 0 else 1
             scale = radius / original_r if original_r > 0 else 1
             x, y = pos["x"] * scale, pos["y"] * scale
 
@@ -2172,6 +2176,616 @@ class ACCVisualizationWidget(QWidget):
 
         # Hide step controls for ACC2
         self.step_controls.setVisible(False)
+
+
+class PresenceAbsenceTable(QTableWidget):
+    """Spreadsheet-like table for presence/absence data (0/1 matrix)"""
+
+    PRESENT_COLOR = QColor(200, 235, 200)  # light green
+    ABSENT_COLOR = QColor(255, 255, 255)  # white
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.areas = []  # row labels
+        self.taxa = []  # column labels
+        self._setup_ui()
+
+    def _setup_ui(self):
+        self.setContextMenuPolicy(Qt.CustomContextMenu)
+        self.customContextMenuRequested.connect(self._show_context_menu)
+        self.cellDoubleClicked.connect(self._toggle_cell)
+        self.cellChanged.connect(self._on_cell_changed)
+        self.setSelectionMode(QTableWidget.ContiguousSelection)
+        self.setEditTriggers(QTableWidget.DoubleClicked | QTableWidget.SelectedClicked | QTableWidget.AnyKeyPressed)
+        self.horizontalHeader().setDefaultSectionSize(60)
+        self.verticalHeader().setDefaultSectionSize(24)
+        self.setShowGrid(True)
+        self.setStyleSheet("""
+            QTableWidget {
+                font-size: 11px;
+                gridline-color: #999;
+            }
+            QTableWidget::item {
+                border: 1px solid #bbb;
+                padding: 2px;
+            }
+        """)
+
+        # Header click for renaming
+        self.horizontalHeader().sectionDoubleClicked.connect(self._rename_taxon)
+        self.verticalHeader().sectionDoubleClicked.connect(self._rename_area)
+
+    # ── data access ──
+
+    def get_data(self):
+        """Return current table data as dict"""
+        matrix = []
+        for r in range(self.rowCount()):
+            row = []
+            for c in range(self.columnCount()):
+                item = self.item(r, c)
+                row.append(int(item.text()) if item and item.text() == "1" else 0)
+            matrix.append(row)
+        return {"areas": list(self.areas), "taxa": list(self.taxa), "matrix": matrix}
+
+    def set_data(self, areas, taxa, matrix):
+        """Populate table from data"""
+        self.areas = list(areas)
+        self.taxa = list(taxa)
+        self.setRowCount(len(self.areas))
+        self.setColumnCount(len(self.taxa))
+        self.setHorizontalHeaderLabels(self.taxa)
+        self.setVerticalHeaderLabels(self.areas)
+        for r, row in enumerate(matrix):
+            for c, val in enumerate(row):
+                self._set_cell(r, c, 1 if val else 0)
+
+    # ── cell helpers ──
+
+    def _set_cell(self, row, col, value):
+        self.blockSignals(True)
+        v = 1 if value else 0
+        item = QTableWidgetItem(str(v))
+        item.setTextAlignment(Qt.AlignCenter)
+        item.setBackground(QBrush(self.PRESENT_COLOR if v else self.ABSENT_COLOR))
+        self.setItem(row, col, item)
+        self.blockSignals(False)
+
+    def _toggle_cell(self, row, col):
+        item = self.item(row, col)
+        cur = int(item.text()) if item and item.text() == "1" else 0
+        self._set_cell(row, col, 0 if cur else 1)
+
+    def _on_cell_changed(self, row, col):
+        """Validate edited cell: coerce to 0 or 1 and update color"""
+        item = self.item(row, col)
+        if item is None:
+            return
+        text = item.text().strip()
+        v = 1 if text in ("1", "1.0") else 0
+        self._set_cell(row, col, v)
+
+    # ── context menu ──
+
+    def _show_context_menu(self, pos):
+        menu = QMenu(self)
+        idx = self.indexAt(pos)
+        row, col = idx.row(), idx.column()
+
+        # Row (Area) operations
+        row_menu = menu.addMenu("Area (Row)")
+        row_menu.addAction("Add Area Above", lambda: self._add_area(row))
+        row_menu.addAction("Add Area Below", lambda: self._add_area(row + 1))
+        if self.rowCount() > 0:
+            row_menu.addAction("Rename Area", lambda: self._rename_area(row))
+            row_menu.addAction("Delete Area", lambda: self._delete_area(row))
+
+        # Column (Taxon) operations
+        col_menu = menu.addMenu("Taxon (Column)")
+        col_menu.addAction("Add Taxon Left", lambda: self._add_taxon(col))
+        col_menu.addAction("Add Taxon Right", lambda: self._add_taxon(col + 1))
+        if self.columnCount() > 0:
+            col_menu.addAction("Rename Taxon", lambda: self._rename_taxon(col))
+            col_menu.addAction("Delete Taxon", lambda: self._delete_taxon(col))
+
+        menu.addSeparator()
+        menu.addAction("Fill Selected = 1", lambda: self._fill_selection(1))
+        menu.addAction("Fill Selected = 0", lambda: self._fill_selection(0))
+
+        menu.exec_(self.viewport().mapToGlobal(pos))
+
+    def _fill_selection(self, value):
+        for item in self.selectedItems():
+            self._set_cell(item.row(), item.column(), value)
+
+    # ── row (area) management ──
+
+    def _add_area(self, at_row):
+        name, ok = QInputDialog.getText(self, "Add Area", "Area name:")
+        if not ok or not name.strip():
+            return
+        name = name.strip()
+        at_row = max(0, min(at_row, self.rowCount()))
+        self.insertRow(at_row)
+        self.areas.insert(at_row, name)
+        self.setVerticalHeaderLabels(self.areas)
+        for c in range(self.columnCount()):
+            self._set_cell(at_row, c, 0)
+
+    def _rename_area(self, row):
+        if row < 0 or row >= self.rowCount():
+            return
+        name, ok = QInputDialog.getText(self, "Rename Area", "New name:", text=self.areas[row])
+        if ok and name.strip():
+            self.areas[row] = name.strip()
+            self.setVerticalHeaderLabels(self.areas)
+
+    def _delete_area(self, row):
+        if row < 0 or row >= self.rowCount():
+            return
+        reply = QMessageBox.question(
+            self,
+            "Delete Area",
+            f"Delete area '{self.areas[row]}'?",
+            QMessageBox.Yes | QMessageBox.No,
+        )
+        if reply == QMessageBox.Yes:
+            self.removeRow(row)
+            self.areas.pop(row)
+
+    # ── column (taxon) management ──
+
+    def _add_taxon(self, at_col):
+        name, ok = QInputDialog.getText(self, "Add Taxon", "Taxon name:")
+        if not ok or not name.strip():
+            return
+        name = name.strip()
+        at_col = max(0, min(at_col, self.columnCount()))
+        self.insertColumn(at_col)
+        self.taxa.insert(at_col, name)
+        self.setHorizontalHeaderLabels(self.taxa)
+        for r in range(self.rowCount()):
+            self._set_cell(r, at_col, 0)
+
+    def _rename_taxon(self, col):
+        if col < 0 or col >= self.columnCount():
+            return
+        name, ok = QInputDialog.getText(self, "Rename Taxon", "New name:", text=self.taxa[col])
+        if ok and name.strip():
+            self.taxa[col] = name.strip()
+            self.setHorizontalHeaderLabels(self.taxa)
+
+    def _delete_taxon(self, col):
+        if col < 0 or col >= self.columnCount():
+            return
+        reply = QMessageBox.question(
+            self,
+            "Delete Taxon",
+            f"Delete taxon '{self.taxa[col]}'?",
+            QMessageBox.Yes | QMessageBox.No,
+        )
+        if reply == QMessageBox.Yes:
+            self.removeColumn(col)
+            self.taxa.pop(col)
+
+    # ── clipboard (copy/paste) ──
+
+    def keyPressEvent(self, event):
+        if event.matches(QKeySequence.Copy):
+            self._copy_selection()
+        elif event.matches(QKeySequence.Paste):
+            self._paste_selection()
+        else:
+            super().keyPressEvent(event)
+
+    def _copy_selection(self):
+        selection = self.selectedRanges()
+        if not selection:
+            return
+        sel = selection[0]
+        top, left = sel.topRow(), sel.leftColumn()
+        bottom, right = sel.bottomRow(), sel.rightColumn()
+
+        # If entire table selected (or starting from 0,0), include headers
+        include_headers = top == 0 and left == 0
+
+        rows = []
+        if include_headers:
+            # First row: empty corner + taxa headers
+            header_row = [""] + [self.taxa[c] if c < len(self.taxa) else "" for c in range(left, right + 1)]
+            rows.append("\t".join(header_row))
+
+        for r in range(top, bottom + 1):
+            cols = []
+            if include_headers:
+                # Prepend area name
+                cols.append(self.areas[r] if r < len(self.areas) else "")
+            for c in range(left, right + 1):
+                item = self.item(r, c)
+                cols.append(item.text() if item else "0")
+            rows.append("\t".join(cols))
+        QApplication.clipboard().setText("\n".join(rows))
+
+    def _paste_selection(self):
+        text = QApplication.clipboard().text()
+        if not text:
+            return
+        cur_row = self.currentRow()
+        cur_col = self.currentColumn()
+        if cur_row < 0:
+            cur_row = 0
+        if cur_col < 0:
+            cur_col = 0
+
+        # Normalize line endings (Windows \r\n → \n)
+        text = text.replace("\r\n", "\n").replace("\r", "\n").strip()
+        rows = [r for r in text.split("\n") if r.strip()]
+        parsed = [row.split("\t") for row in rows]
+
+        # Paste at (0,0): treat as full table with headers
+        # Two possible formats from Excel:
+        #   With corner:    corner\ttaxa1\ttaxa2\t...   (header has N+1 cols, data has N+1 cols)
+        #   Without corner: taxa1\ttaxa2\t...           (header has N cols, data has N+1 cols)
+        if cur_row == 0 and cur_col == 0 and len(parsed) >= 2 and len(parsed[0]) >= 1:
+            n_header_cols = len(parsed[0])
+            n_data_cols = len(parsed[1])
+
+            if n_data_cols > n_header_cols:
+                # No corner cell: entire first row is taxa
+                new_taxa = [c.strip() for c in parsed[0]]
+            else:
+                # Has corner cell: skip [0], taxa start at [1]
+                new_taxa = [c.strip() for c in parsed[0][1:]]
+
+            # Remaining rows: [area_name, val1, val2, ...]
+            new_areas = []
+            matrix = []
+            for data_row in parsed[1:]:
+                cells = [c.strip() for c in data_row]
+                if not cells or not cells[0]:
+                    continue
+                new_areas.append(cells[0])
+                vals = [1 if v in ("1", "1.0") else 0 for v in cells[1:]]
+                while len(vals) < len(new_taxa):
+                    vals.append(0)
+                matrix.append(vals[: len(new_taxa)])
+
+            if new_taxa and new_areas:
+                self.set_data(new_areas, new_taxa, matrix)
+                return
+
+        # Normal paste: fill values starting from current cell, expand if needed
+        for dr, data_row in enumerate(parsed):
+            for dc, val in enumerate(data_row):
+                r, c = cur_row + dr, cur_col + dc
+                # Expand rows if needed
+                while r >= self.rowCount():
+                    new_r = self.rowCount()
+                    self.insertRow(new_r)
+                    self.areas.append(f"Area_{new_r + 1}")
+                    self.setVerticalHeaderLabels(self.areas)
+                    for cc in range(self.columnCount()):
+                        self._set_cell(new_r, cc, 0)
+                # Expand columns if needed
+                while c >= self.columnCount():
+                    new_c = self.columnCount()
+                    self.insertColumn(new_c)
+                    self.taxa.append(f"Taxon_{new_c + 1}")
+                    self.setHorizontalHeaderLabels(self.taxa)
+                    for rr in range(self.rowCount()):
+                        self._set_cell(rr, new_c, 0)
+                self._set_cell(r, c, 1 if val.strip() in ("1", "1.0") else 0)
+
+
+class DataPanel(QWidget):
+    """Leftmost panel: Raw presence/absence data with multi-sheet (period) tabs"""
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self._current_file = None
+        self.init_ui()
+
+    def init_ui(self):
+        layout = QVBoxLayout()
+        layout.setContentsMargins(5, 5, 5, 5)
+        layout.setSpacing(4)
+
+        # ── Header ──
+        header = QHBoxLayout()
+        header_label = QLabel("<b>Raw Data</b>")
+        header.addWidget(header_label)
+        header.addStretch()
+
+        btn_style = """
+            QPushButton {
+                background-color: %s; color: white;
+                padding: 5px 10px; border-radius: 3px; font-size: 10px;
+            }
+            QPushButton:hover { background-color: %s; }
+        """
+
+        self.new_btn = QPushButton("New")
+        self.new_btn.setStyleSheet(btn_style % ("#607D8B", "#455A64"))
+        self.new_btn.clicked.connect(self.new_project)
+        header.addWidget(self.new_btn)
+
+        self.load_btn = QPushButton("Open")
+        self.load_btn.setStyleSheet(btn_style % ("#2196F3", "#1976D2"))
+        self.load_btn.clicked.connect(self.load_file)
+        header.addWidget(self.load_btn)
+
+        self.save_btn = QPushButton("Save")
+        self.save_btn.setStyleSheet(btn_style % ("#4CAF50", "#388E3C"))
+        self.save_btn.clicked.connect(self.save_file)
+        header.addWidget(self.save_btn)
+
+        layout.addLayout(header)
+
+        # ── Tab widget for sheets ──
+        self.tab_widget = QTabWidget()
+        self.tab_widget.setTabPosition(QTabWidget.South)
+        self.tab_widget.setStyleSheet("""
+            QTabWidget::pane { border: 1px solid #ccc; }
+            QTabBar::tab {
+                padding: 4px 12px; font-size: 10px;
+                border: 1px solid #ccc; border-bottom: none;
+                margin-right: 2px; border-radius: 3px 3px 0 0;
+            }
+            QTabBar::tab:selected {
+                background: #e3f2fd; font-weight: bold;
+            }
+        """)
+        layout.addWidget(self.tab_widget, stretch=1)
+
+        # ── Sheet management buttons ──
+        sheet_btns = QHBoxLayout()
+        sheet_btns.setSpacing(4)
+
+        self.add_sheet_btn = QPushButton("+ Add Sheet")
+        self.add_sheet_btn.setStyleSheet(btn_style % ("#FF9800", "#F57C00"))
+        self.add_sheet_btn.clicked.connect(self.add_sheet)
+        sheet_btns.addWidget(self.add_sheet_btn)
+
+        self.rename_sheet_btn = QPushButton("Rename")
+        self.rename_sheet_btn.setStyleSheet(btn_style % ("#9C27B0", "#7B1FA2"))
+        self.rename_sheet_btn.clicked.connect(self.rename_current_sheet)
+        sheet_btns.addWidget(self.rename_sheet_btn)
+
+        self.delete_sheet_btn = QPushButton("Delete")
+        self.delete_sheet_btn.setStyleSheet(btn_style % ("#f44336", "#d32f2f"))
+        self.delete_sheet_btn.clicked.connect(self.delete_current_sheet)
+        sheet_btns.addWidget(self.delete_sheet_btn)
+
+        sheet_btns.addStretch()
+        layout.addLayout(sheet_btns)
+
+        # ── Import CSV button ──
+        import_layout = QHBoxLayout()
+        self.import_csv_btn = QPushButton("Import CSV")
+        self.import_csv_btn.setStyleSheet(btn_style % ("#795548", "#5D4037"))
+        self.import_csv_btn.clicked.connect(self.import_csv)
+        import_layout.addWidget(self.import_csv_btn)
+        import_layout.addStretch()
+        layout.addLayout(import_layout)
+
+        self.setLayout(layout)
+
+    # ── Sheet management ──
+
+    def _current_table(self):
+        """Get current PresenceAbsenceTable or None"""
+        w = self.tab_widget.currentWidget()
+        if w is None:
+            return None
+        if isinstance(w, PresenceAbsenceTable):
+            return w
+        # Container wrapping a table
+        return getattr(w, "_table", None)
+
+    def add_sheet(self, name=None):
+        """Add a new empty sheet"""
+        if name is None or isinstance(name, bool):
+            name, ok = QInputDialog.getText(self, "Add Sheet", "Sheet name (e.g., period):")
+            if not ok or not name.strip():
+                return None
+            name = name.strip()
+        # Wrap table in a container with toolbar
+        container = QWidget()
+        container_layout = QVBoxLayout()
+        container_layout.setContentsMargins(0, 0, 0, 0)
+        container_layout.setSpacing(2)
+
+        # Toolbar for row/column operations
+        toolbar = QHBoxLayout()
+        toolbar.setSpacing(4)
+
+        tb_style = """QPushButton {
+            background-color: %s; color: white;
+            padding: 3px 8px; border-radius: 2px; font-size: 10px;
+        } QPushButton:hover { background-color: %s; }"""
+
+        add_area_btn = QPushButton("+ Area")
+        add_area_btn.setStyleSheet(tb_style % ("#43A047", "#2E7D32"))
+        toolbar.addWidget(add_area_btn)
+
+        add_taxon_btn = QPushButton("+ Taxon")
+        add_taxon_btn.setStyleSheet(tb_style % ("#1E88E5", "#1565C0"))
+        toolbar.addWidget(add_taxon_btn)
+
+        toolbar.addStretch()
+
+        info_label = QLabel("")
+        info_label.setStyleSheet("font-size: 9px; color: #888;")
+        toolbar.addWidget(info_label)
+
+        container_layout.addLayout(toolbar)
+
+        table = PresenceAbsenceTable(self)
+        container_layout.addWidget(table, stretch=1)
+        container.setLayout(container_layout)
+
+        # Connect toolbar buttons
+        add_area_btn.clicked.connect(lambda: table._add_area(table.rowCount()))
+        add_taxon_btn.clicked.connect(lambda: table._add_taxon(table.columnCount()))
+
+        # Store table reference on the container
+        container._table = table
+        container._info_label = info_label
+
+        # Update info on changes
+        def update_info():
+            info_label.setText(f"{table.rowCount()} areas x {table.columnCount()} taxa")
+
+        table.model().rowsInserted.connect(update_info)
+        table.model().rowsRemoved.connect(update_info)
+        table.model().columnsInserted.connect(update_info)
+        table.model().columnsRemoved.connect(update_info)
+
+        self.tab_widget.addTab(container, name)
+        self.tab_widget.setCurrentWidget(container)
+
+        # Initialize with default grid for new empty sheets
+        if table.rowCount() == 0 and table.columnCount() == 0:
+            default_areas = ["Area_1", "Area_2", "Area_3"]
+            default_taxa = ["Taxon_1", "Taxon_2", "Taxon_3"]
+            default_matrix = [[0] * 3 for _ in range(3)]
+            table.set_data(default_areas, default_taxa, default_matrix)
+            update_info()
+
+        return table
+
+    def rename_current_sheet(self):
+        idx = self.tab_widget.currentIndex()
+        if idx < 0:
+            return
+        old_name = self.tab_widget.tabText(idx)
+        name, ok = QInputDialog.getText(self, "Rename Sheet", "New name:", text=old_name)
+        if ok and name.strip():
+            self.tab_widget.setTabText(idx, name.strip())
+
+    def delete_current_sheet(self):
+        idx = self.tab_widget.currentIndex()
+        if idx < 0:
+            return
+        name = self.tab_widget.tabText(idx)
+        reply = QMessageBox.question(
+            self,
+            "Delete Sheet",
+            f"Delete sheet '{name}'?",
+            QMessageBox.Yes | QMessageBox.No,
+        )
+        if reply == QMessageBox.Yes:
+            self.tab_widget.removeTab(idx)
+
+    # ── Project data serialization ──
+
+    def _get_table_at(self, index):
+        """Get PresenceAbsenceTable from tab index (handles container wrapping)"""
+        w = self.tab_widget.widget(index)
+        if isinstance(w, PresenceAbsenceTable):
+            return w
+        return getattr(w, "_table", None)
+
+    def get_all_data(self):
+        """Collect all sheets into a serializable dict"""
+        sheets = []
+        for i in range(self.tab_widget.count()):
+            table = self._get_table_at(i)
+            if table is not None:
+                d = table.get_data()
+                d["name"] = self.tab_widget.tabText(i)
+                sheets.append(d)
+        return {"version": "1.0", "sheets": sheets}
+
+    def set_all_data(self, data):
+        """Load project data from dict"""
+        # Clear existing tabs
+        while self.tab_widget.count() > 0:
+            self.tab_widget.removeTab(0)
+        for sheet in data.get("sheets", []):
+            table = self.add_sheet(name=sheet.get("name", "Untitled"))
+            table.set_data(
+                sheet.get("areas", []),
+                sheet.get("taxa", []),
+                sheet.get("matrix", []),
+            )
+
+    # ── File operations ──
+
+    def new_project(self):
+        """Create a new empty project"""
+        if self.tab_widget.count() > 0:
+            reply = QMessageBox.question(
+                self,
+                "New Project",
+                "Discard current data and start new?",
+                QMessageBox.Yes | QMessageBox.No,
+            )
+            if reply != QMessageBox.Yes:
+                return
+        while self.tab_widget.count() > 0:
+            self.tab_widget.removeTab(0)
+        self._current_file = None
+        self.add_sheet(name="Sheet1")
+
+    def save_file(self):
+        """Save project to .accdata JSON file"""
+        if self.tab_widget.count() == 0:
+            QMessageBox.warning(self, "No Data", "No sheets to save.")
+            return
+        path = self._current_file
+        if not path:
+            path, _ = QFileDialog.getSaveFileName(
+                self, "Save Raw Data", "", "ACC Data Files (*.accdata);;All Files (*)"
+            )
+        if not path:
+            return
+        try:
+            data = self.get_all_data()
+            with open(path, "w", encoding="utf-8") as f:
+                json.dump(data, f, ensure_ascii=False, indent=2)
+            self._current_file = path
+        except Exception as e:
+            QMessageBox.critical(self, "Save Error", str(e))
+
+    def save_file_as(self):
+        """Save project to a new file"""
+        old = self._current_file
+        self._current_file = None
+        self.save_file()
+        if not self._current_file:
+            self._current_file = old
+
+    def load_file(self):
+        """Load project from .accdata JSON file"""
+        path, _ = QFileDialog.getOpenFileName(self, "Open Raw Data", "", "ACC Data Files (*.accdata);;All Files (*)")
+        if not path:
+            return
+        try:
+            with open(path, encoding="utf-8") as f:
+                data = json.load(f)
+            self.set_all_data(data)
+            self._current_file = path
+        except Exception as e:
+            QMessageBox.critical(self, "Load Error", str(e))
+
+    def import_csv(self):
+        """Import a CSV file as a single sheet"""
+        path, _ = QFileDialog.getOpenFileName(self, "Import CSV", "", "CSV Files (*.csv);;All Files (*)")
+        if not path:
+            return
+        try:
+            df = pd.read_csv(path, index_col=0)
+            areas = [str(a) for a in df.index.tolist()]
+            taxa = [str(t) for t in df.columns.tolist()]
+            matrix = []
+            for _, row in df.iterrows():
+                matrix.append([1 if v else 0 for v in row.values])
+            name = Path(path).stem
+            table = self.add_sheet(name=name)
+            table.set_data(areas, taxa, matrix)
+        except Exception as e:
+            QMessageBox.critical(self, "Import Error", str(e))
 
 
 class ColumnPanel(QWidget):
@@ -2628,7 +3242,7 @@ class RightPanel(ColumnPanel):
 
 
 class MainWindow(QMainWindow):
-    """Main application window with 3-column layout and step-by-step visualization"""
+    """Main application window with 4-column layout and step-by-step visualization"""
 
     def __init__(self):
         super().__init__()
@@ -2638,14 +3252,19 @@ class MainWindow(QMainWindow):
 
     def init_ui(self):
         self.setWindowTitle("ACC Visualizer - Step-by-Step Clustering")
-        self.setGeometry(50, 50, 1800, 900)
+        self.setGeometry(50, 50, 2100, 900)
 
-        # Create three panels
+        # Create four panels
+        self.data_panel = DataPanel()
         self.left_panel = LeftPanel()
         self.center_panel = CenterPanel()
         self.right_panel = RightPanel()
 
         # Add to scroll areas
+        data_scroll = QScrollArea()
+        data_scroll.setWidgetResizable(True)
+        data_scroll.setWidget(self.data_panel)
+
         left_scroll = QScrollArea()
         left_scroll.setWidgetResizable(True)
         left_scroll.setWidget(self.left_panel)
@@ -2660,12 +3279,13 @@ class MainWindow(QMainWindow):
 
         # Create splitter for resizable panels
         splitter = QSplitter(Qt.Horizontal)
+        splitter.addWidget(data_scroll)
         splitter.addWidget(left_scroll)
         splitter.addWidget(center_scroll)
         splitter.addWidget(right_scroll)
 
-        # Set initial sizes (left: 550, center: 550, right: 700)
-        splitter.setSizes([550, 550, 700])
+        # Set initial sizes (data: 400, left: 450, center: 450, right: 600)
+        splitter.setSizes([400, 450, 450, 600])
 
         # Set central widget
         self.setCentralWidget(splitter)
