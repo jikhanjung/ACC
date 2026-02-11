@@ -43,6 +43,8 @@ from PyQt5.QtWidgets import (
     QTableWidgetItem,
     QTabWidget,
     QTextEdit,
+    QUndoCommand,
+    QUndoStack,
     QVBoxLayout,
     QWidget,
 )
@@ -2178,6 +2180,263 @@ class ACCVisualizationWidget(QWidget):
         self.step_controls.setVisible(False)
 
 
+# ── Undo/Redo Commands ──
+
+
+class CellChangeCommand(QUndoCommand):
+    """Undo/redo a single cell value change (0↔1)"""
+
+    def __init__(self, table, row, col, old_val, new_val, text="Cell Change"):
+        super().__init__(text)
+        self._table = table
+        self._row = row
+        self._col = col
+        self._old = old_val
+        self._new = new_val
+
+    def redo(self):
+        self._table._set_cell(self._row, self._col, self._new)
+
+    def undo(self):
+        self._table._set_cell(self._row, self._col, self._old)
+
+
+class BulkCellChangeCommand(QUndoCommand):
+    """Undo/redo multiple cell value changes at once (fill selection)"""
+
+    def __init__(self, table, changes, text="Fill Selection"):
+        super().__init__(text)
+        self._table = table
+        # changes: list of (row, col, old_val, new_val)
+        self._changes = changes
+
+    def redo(self):
+        for row, col, _old, new in self._changes:
+            self._table._set_cell(row, col, new)
+
+    def undo(self):
+        for row, col, old, _new in self._changes:
+            self._table._set_cell(row, col, old)
+
+
+class AddAreaCommand(QUndoCommand):
+    """Undo/redo adding an area to all sheets"""
+
+    def __init__(self, data_panel, at_row, name, text="Add Area"):
+        super().__init__(text)
+        self._dp = data_panel
+        self._at_row = at_row
+        self._name = name
+
+    def redo(self):
+        for table in self._dp._all_tables():
+            at = max(0, min(self._at_row, table.rowCount()))
+            table.insertRow(at)
+            table.areas.insert(at, self._name)
+            table.setVerticalHeaderLabels(table.areas)
+            for c in range(table.columnCount()):
+                table._set_cell(at, c, 0)
+        self._dp._update_global_tab()
+
+    def undo(self):
+        for table in self._dp._all_tables():
+            if self._at_row < table.rowCount():
+                table.removeRow(self._at_row)
+                table.areas.pop(self._at_row)
+        self._dp._update_global_tab()
+
+
+class DeleteAreaCommand(QUndoCommand):
+    """Undo/redo deleting an area from all sheets"""
+
+    def __init__(self, data_panel, row, area_name, per_sheet_data, text="Delete Area"):
+        super().__init__(text)
+        self._dp = data_panel
+        self._row = row
+        self._name = area_name
+        # per_sheet_data: list of row-data lists, one per table
+        self._per_sheet_data = per_sheet_data
+
+    def redo(self):
+        for table in self._dp._all_tables():
+            if self._row < table.rowCount():
+                table.removeRow(self._row)
+                table.areas.pop(self._row)
+        self._dp._update_global_tab()
+
+    def undo(self):
+        tables = self._dp._all_tables()
+        for i, table in enumerate(tables):
+            at = min(self._row, table.rowCount())
+            table.insertRow(at)
+            table.areas.insert(at, self._name)
+            table.setVerticalHeaderLabels(table.areas)
+            if i < len(self._per_sheet_data):
+                row_data = self._per_sheet_data[i]
+                for c in range(min(len(row_data), table.columnCount())):
+                    table._set_cell(at, c, row_data[c])
+            else:
+                for c in range(table.columnCount()):
+                    table._set_cell(at, c, 0)
+        self._dp._update_global_tab()
+
+
+class RenameAreaCommand(QUndoCommand):
+    """Undo/redo renaming an area across all sheets"""
+
+    def __init__(self, data_panel, row, old_name, new_name, text="Rename Area"):
+        super().__init__(text)
+        self._dp = data_panel
+        self._row = row
+        self._old = old_name
+        self._new = new_name
+
+    def redo(self):
+        for table in self._dp._all_tables():
+            if self._row < len(table.areas):
+                table.areas[self._row] = self._new
+                table.setVerticalHeaderLabels(table.areas)
+        self._dp._update_global_tab()
+
+    def undo(self):
+        for table in self._dp._all_tables():
+            if self._row < len(table.areas):
+                table.areas[self._row] = self._old
+                table.setVerticalHeaderLabels(table.areas)
+        self._dp._update_global_tab()
+
+
+class AddTaxonCommand(QUndoCommand):
+    """Undo/redo adding a taxon column to a single table"""
+
+    def __init__(self, table, at_col, name, text="Add Taxon"):
+        super().__init__(text)
+        self._table = table
+        self._at_col = at_col
+        self._name = name
+
+    def redo(self):
+        at = max(0, min(self._at_col, self._table.columnCount()))
+        self._table.insertColumn(at)
+        self._table.taxa.insert(at, self._name)
+        self._table.setHorizontalHeaderLabels(self._table.taxa)
+        for r in range(self._table.rowCount()):
+            self._table._set_cell(r, at, 0)
+
+    def undo(self):
+        if self._at_col < self._table.columnCount():
+            self._table.removeColumn(self._at_col)
+            self._table.taxa.pop(self._at_col)
+
+
+class DeleteTaxonCommand(QUndoCommand):
+    """Undo/redo deleting a taxon column from a single table"""
+
+    def __init__(self, table, col, taxon_name, col_data, text="Delete Taxon"):
+        super().__init__(text)
+        self._table = table
+        self._col = col
+        self._name = taxon_name
+        # col_data: list of values for each row in this column
+        self._col_data = col_data
+
+    def redo(self):
+        if self._col < self._table.columnCount():
+            self._table.removeColumn(self._col)
+            self._table.taxa.pop(self._col)
+
+    def undo(self):
+        at = min(self._col, self._table.columnCount())
+        self._table.insertColumn(at)
+        self._table.taxa.insert(at, self._name)
+        self._table.setHorizontalHeaderLabels(self._table.taxa)
+        for r in range(min(len(self._col_data), self._table.rowCount())):
+            self._table._set_cell(r, at, self._col_data[r])
+
+
+class RenameTaxonCommand(QUndoCommand):
+    """Undo/redo renaming a taxon column"""
+
+    def __init__(self, table, col, old_name, new_name, text="Rename Taxon"):
+        super().__init__(text)
+        self._table = table
+        self._col = col
+        self._old = old_name
+        self._new = new_name
+
+    def redo(self):
+        if self._col < len(self._table.taxa):
+            self._table.taxa[self._col] = self._new
+            self._table.setHorizontalHeaderLabels(self._table.taxa)
+
+    def undo(self):
+        if self._col < len(self._table.taxa):
+            self._table.taxa[self._col] = self._old
+            self._table.setHorizontalHeaderLabels(self._table.taxa)
+
+
+class ReorderRowCommand(QUndoCommand):
+    """Undo/redo reordering rows across all sheets"""
+
+    def __init__(self, data_panel, old_order, new_order, text="Reorder Rows"):
+        super().__init__(text)
+        self._dp = data_panel
+        self._old_order = old_order
+        self._new_order = new_order
+
+    def redo(self):
+        self._apply_order(self._new_order)
+
+    def undo(self):
+        self._apply_order(self._old_order)
+
+    def _apply_order(self, order):
+        for table in self._dp._all_tables():
+            data = table.get_data()
+            areas = [data["areas"][i] for i in order]
+            matrix = [data["matrix"][i] for i in order]
+            table.set_data(areas, data["taxa"], matrix)
+        self._dp._update_global_tab()
+
+
+class ReorderColumnCommand(QUndoCommand):
+    """Undo/redo reordering columns in a single table"""
+
+    def __init__(self, table, old_order, new_order, text="Reorder Columns"):
+        super().__init__(text)
+        self._table = table
+        self._old_order = old_order
+        self._new_order = new_order
+
+    def redo(self):
+        self._apply_order(self._new_order)
+
+    def undo(self):
+        self._apply_order(self._old_order)
+
+    def _apply_order(self, order):
+        data = self._table.get_data()
+        taxa = [data["taxa"][i] for i in order]
+        matrix = [[row[i] for i in order] for row in data["matrix"]]
+        self._table.set_data(data["areas"], taxa, matrix)
+
+
+class PasteTableCommand(QUndoCommand):
+    """Undo/redo paste by snapshotting entire table state"""
+
+    def __init__(self, table, before_data, after_data, text="Paste"):
+        super().__init__(text)
+        self._table = table
+        self._before = before_data
+        self._after = after_data
+
+    def redo(self):
+        self._table.set_data(self._after["areas"], self._after["taxa"], self._after["matrix"])
+
+    def undo(self):
+        self._table.set_data(self._before["areas"], self._before["taxa"], self._before["matrix"])
+
+
 class PresenceAbsenceTable(QTableWidget):
     """Spreadsheet-like table for presence/absence data (0/1 matrix)"""
 
@@ -2188,6 +2447,8 @@ class PresenceAbsenceTable(QTableWidget):
         super().__init__(parent)
         self.areas = []  # row labels
         self.taxa = []  # column labels
+        self._cell_values = {}  # track cell values for undo: (row, col) -> value
+        self._undo_guard = False  # prevent recursive undo pushes
         self._setup_ui()
 
     def _setup_ui(self):
@@ -2214,6 +2475,12 @@ class PresenceAbsenceTable(QTableWidget):
         # Header double-click for renaming
         self.horizontalHeader().sectionDoubleClicked.connect(self._rename_taxon)
         self.verticalHeader().sectionDoubleClicked.connect(self._on_area_header_dblclick)
+
+        # Header drag reordering
+        self.verticalHeader().setSectionsMovable(True)
+        self.verticalHeader().sectionMoved.connect(self._on_row_moved)
+        self.horizontalHeader().setSectionsMovable(True)
+        self.horizontalHeader().sectionMoved.connect(self._on_column_moved)
 
     def _on_area_header_dblclick(self, row):
         """Route area rename through DataPanel for sync, or handle locally"""
@@ -2257,21 +2524,39 @@ class PresenceAbsenceTable(QTableWidget):
         item.setTextAlignment(Qt.AlignCenter)
         item.setBackground(QBrush(self.PRESENT_COLOR if v else self.ABSENT_COLOR))
         self.setItem(row, col, item)
+        self._cell_values[(row, col)] = v
         self.blockSignals(False)
 
     def _toggle_cell(self, row, col):
         item = self.item(row, col)
-        cur = int(item.text()) if item and item.text() == "1" else 0
-        self._set_cell(row, col, 0 if cur else 1)
+        old_val = int(item.text()) if item and item.text() == "1" else 0
+        new_val = 0 if old_val else 1
+        stack = self._get_undo_stack()
+        if stack:
+            stack.push(CellChangeCommand(self, row, col, old_val, new_val))
+        else:
+            self._set_cell(row, col, new_val)
 
     def _on_cell_changed(self, row, col):
         """Validate edited cell: coerce to 0 or 1 and update color"""
+        if self._undo_guard:
+            return
         item = self.item(row, col)
         if item is None:
             return
         text = item.text().strip()
-        v = 1 if text in ("1", "1.0") else 0
-        self._set_cell(row, col, v)
+        new_val = 1 if text in ("1", "1.0") else 0
+        old_val = self._cell_values.get((row, col), 0)
+        if old_val == new_val:
+            self._set_cell(row, col, new_val)
+            return
+        stack = self._get_undo_stack()
+        if stack:
+            self._undo_guard = True
+            stack.push(CellChangeCommand(self, row, col, old_val, new_val))
+            self._undo_guard = False
+        else:
+            self._set_cell(row, col, new_val)
 
     # ── context menu ──
 
@@ -2319,9 +2604,71 @@ class PresenceAbsenceTable(QTableWidget):
             p = p.parent()
         return None
 
+    def _get_undo_stack(self):
+        """Get the undo stack from DataPanel, or None"""
+        dp = self._find_data_panel()
+        return dp.undo_stack if dp else None
+
     def _fill_selection(self, value):
-        for item in self.selectedItems():
-            self._set_cell(item.row(), item.column(), value)
+        items = self.selectedItems()
+        if not items:
+            return
+        changes = []
+        for item in items:
+            r, c = item.row(), item.column()
+            old_val = self._cell_values.get((r, c), 0)
+            new_val = 1 if value else 0
+            if old_val != new_val:
+                changes.append((r, c, old_val, new_val))
+        if not changes:
+            return
+        stack = self._get_undo_stack()
+        if stack:
+            stack.push(BulkCellChangeCommand(self, changes))
+        else:
+            for r, c, _old, new in changes:
+                self._set_cell(r, c, new)
+
+    # ── header drag handlers ──
+
+    def _on_row_moved(self, logical, old_visual, new_visual):
+        """Handle row header drag: revert visual move, push ReorderRowCommand"""
+        header = self.verticalHeader()
+        header.blockSignals(True)
+        header.moveSection(new_visual, old_visual)
+        header.blockSignals(False)
+
+        n = self.rowCount()
+        if n == 0:
+            return
+        old_order = list(range(n))
+        new_order = list(range(n))
+        item = new_order.pop(old_visual)
+        new_order.insert(new_visual, item)
+
+        dp = self._find_data_panel()
+        stack = self._get_undo_stack()
+        if stack and dp:
+            stack.push(ReorderRowCommand(dp, old_order, new_order))
+
+    def _on_column_moved(self, logical, old_visual, new_visual):
+        """Handle column header drag: revert visual move, push ReorderColumnCommand"""
+        header = self.horizontalHeader()
+        header.blockSignals(True)
+        header.moveSection(new_visual, old_visual)
+        header.blockSignals(False)
+
+        n = self.columnCount()
+        if n == 0:
+            return
+        old_order = list(range(n))
+        new_order = list(range(n))
+        item = new_order.pop(old_visual)
+        new_order.insert(new_visual, item)
+
+        stack = self._get_undo_stack()
+        if stack:
+            stack.push(ReorderColumnCommand(self, old_order, new_order))
 
     # ── row (area) management ──
 
@@ -2366,19 +2713,29 @@ class PresenceAbsenceTable(QTableWidget):
             return
         name = name.strip()
         at_col = max(0, min(at_col, self.columnCount()))
-        self.insertColumn(at_col)
-        self.taxa.insert(at_col, name)
-        self.setHorizontalHeaderLabels(self.taxa)
-        for r in range(self.rowCount()):
-            self._set_cell(r, at_col, 0)
+        stack = self._get_undo_stack()
+        if stack:
+            stack.push(AddTaxonCommand(self, at_col, name))
+        else:
+            self.insertColumn(at_col)
+            self.taxa.insert(at_col, name)
+            self.setHorizontalHeaderLabels(self.taxa)
+            for r in range(self.rowCount()):
+                self._set_cell(r, at_col, 0)
 
     def _rename_taxon(self, col):
         if col < 0 or col >= self.columnCount():
             return
-        name, ok = QInputDialog.getText(self, "Rename Taxon", "New name:", text=self.taxa[col])
+        old_name = self.taxa[col]
+        name, ok = QInputDialog.getText(self, "Rename Taxon", "New name:", text=old_name)
         if ok and name.strip():
-            self.taxa[col] = name.strip()
-            self.setHorizontalHeaderLabels(self.taxa)
+            new_name = name.strip()
+            stack = self._get_undo_stack()
+            if stack:
+                stack.push(RenameTaxonCommand(self, col, old_name, new_name))
+            else:
+                self.taxa[col] = new_name
+                self.setHorizontalHeaderLabels(self.taxa)
 
     def _delete_taxon(self, col):
         if col < 0 or col >= self.columnCount():
@@ -2390,8 +2747,17 @@ class PresenceAbsenceTable(QTableWidget):
             QMessageBox.Yes | QMessageBox.No,
         )
         if reply == QMessageBox.Yes:
-            self.removeColumn(col)
-            self.taxa.pop(col)
+            taxon_name = self.taxa[col]
+            col_data = []
+            for r in range(self.rowCount()):
+                item = self.item(r, col)
+                col_data.append(int(item.text()) if item and item.text() == "1" else 0)
+            stack = self._get_undo_stack()
+            if stack:
+                stack.push(DeleteTaxonCommand(self, col, taxon_name, col_data))
+            else:
+                self.removeColumn(col)
+                self.taxa.pop(col)
 
     # ── clipboard (copy/paste) ──
 
@@ -2401,6 +2767,14 @@ class PresenceAbsenceTable(QTableWidget):
         elif event.matches(QKeySequence.Paste):
             if self.editTriggers() != QTableWidget.NoEditTriggers:
                 self._paste_selection()
+        elif event.matches(QKeySequence.Undo):
+            stack = self._get_undo_stack()
+            if stack:
+                stack.undo()
+        elif event.matches(QKeySequence.Redo):
+            stack = self._get_undo_stack()
+            if stack:
+                stack.redo()
         else:
             super().keyPressEvent(event)
 
@@ -2436,6 +2810,9 @@ class PresenceAbsenceTable(QTableWidget):
         text = QApplication.clipboard().text()
         if not text:
             return
+
+        before_data = self.get_data()
+
         cur_row = self.currentRow()
         cur_col = self.currentColumn()
         if cur_row < 0:
@@ -2478,6 +2855,10 @@ class PresenceAbsenceTable(QTableWidget):
 
             if new_taxa and new_areas:
                 self.set_data(new_areas, new_taxa, matrix)
+                after_data = self.get_data()
+                stack = self._get_undo_stack()
+                if stack:
+                    stack.push(PasteTableCommand(self, before_data, after_data))
                 return
 
         # Normal paste: fill values starting from current cell, expand if needed
@@ -2502,6 +2883,11 @@ class PresenceAbsenceTable(QTableWidget):
                         self._set_cell(rr, new_c, 0)
                 self._set_cell(r, c, 1 if val.strip() in ("1", "1.0") else 0)
 
+        after_data = self.get_data()
+        stack = self._get_undo_stack()
+        if stack:
+            stack.push(PasteTableCommand(self, before_data, after_data))
+
 
 class DataPanel(QWidget):
     """Leftmost panel: Raw presence/absence data with multi-sheet (period) tabs"""
@@ -2512,6 +2898,7 @@ class DataPanel(QWidget):
         super().__init__(parent)
         self._current_file = None
         self._global_container = None  # container widget for the Global tab
+        self.undo_stack = QUndoStack(self)
         self.init_ui()
 
     def init_ui(self):
@@ -2744,6 +3131,7 @@ class DataPanel(QWidget):
         )
         if reply == QMessageBox.Yes:
             self.tab_widget.removeTab(idx)
+            self.undo_stack.clear()
             self._update_global_tab()
 
     # ── Area synchronization across all tabs ──
@@ -2805,6 +3193,9 @@ class DataPanel(QWidget):
             # Make read-only: disable editing and context menu
             table.setEditTriggers(QTableWidget.NoEditTriggers)
             table.setContextMenuPolicy(Qt.NoContextMenu)
+            # Disable header drag for Global tab
+            table.verticalHeader().setSectionsMovable(False)
+            table.horizontalHeader().setSectionsMovable(False)
             # Disconnect toggle on double-click
             try:
                 table.cellDoubleClicked.disconnect(table._toggle_cell)
@@ -2831,8 +3222,7 @@ class DataPanel(QWidget):
         global_table = self._global_container._table
         global_table.set_data(areas, union_taxa, union_matrix)
         self._global_container._info_label.setText(
-            f"Read-only union of {len(data_tables)} sheet(s): "
-            f"{len(areas)} areas x {len(union_taxa)} taxa"
+            f"Read-only union of {len(data_tables)} sheet(s): {len(areas)} areas x {len(union_taxa)} taxa"
         )
 
         # Add Global tab if not yet present; keep it at the end
@@ -2860,14 +3250,7 @@ class DataPanel(QWidget):
         if not ok or not name.strip():
             return
         name = name.strip()
-        for table in self._all_tables():
-            at = max(0, min(at_row, table.rowCount()))
-            table.insertRow(at)
-            table.areas.insert(at, name)
-            table.setVerticalHeaderLabels(table.areas)
-            for c in range(table.columnCount()):
-                table._set_cell(at, c, 0)
-        self._update_global_tab()
+        self.undo_stack.push(AddAreaCommand(self, at_row, name))
 
     def sync_rename_area(self, row):
         """Rename an area across ALL tabs"""
@@ -2877,12 +3260,8 @@ class DataPanel(QWidget):
         old_name = tables[0].areas[row]
         name, ok = QInputDialog.getText(self, "Rename Area", "New name:", text=old_name)
         if ok and name.strip():
-            name = name.strip()
-            for table in tables:
-                if row < len(table.areas):
-                    table.areas[row] = name
-                    table.setVerticalHeaderLabels(table.areas)
-            self._update_global_tab()
+            new_name = name.strip()
+            self.undo_stack.push(RenameAreaCommand(self, row, old_name, new_name))
 
     def sync_delete_area(self, row):
         """Delete an area from ALL tabs"""
@@ -2897,17 +3276,22 @@ class DataPanel(QWidget):
             QMessageBox.Yes | QMessageBox.No,
         )
         if reply == QMessageBox.Yes:
+            # Snapshot per-sheet row data for undo
+            per_sheet_data = []
             for table in tables:
+                row_data = []
                 if row < table.rowCount():
-                    table.removeRow(row)
-                    table.areas.pop(row)
-            self._update_global_tab()
+                    for c in range(table.columnCount()):
+                        item = table.item(row, c)
+                        row_data.append(int(item.text()) if item and item.text() == "1" else 0)
+                per_sheet_data.append(row_data)
+            self.undo_stack.push(DeleteAreaCommand(self, row, area_name, per_sheet_data))
 
     # ── Similarity calculation ──
 
     def calculate_similarity(self):
         """Calculate local and global similarity and send to LeftPanel"""
-        from acc_utils import jaccard_similarity_from_presence, union_presence_matrix
+        from acc_utils import jaccard_similarity_from_presence, union_presence_matrix, validate_similarity_matrix
 
         tables = self._all_tables()
         if not tables:
@@ -2918,8 +3302,7 @@ class DataPanel(QWidget):
         cur_idx = self.tab_widget.currentIndex()
         if cur_idx >= 0 and self._is_global_tab(cur_idx):
             QMessageBox.warning(
-                self, "Select a Sheet",
-                "Please select a data sheet (not Global) for local similarity calculation."
+                self, "Select a Sheet", "Please select a data sheet (not Global) for local similarity calculation."
             )
             return
 
@@ -2934,18 +3317,58 @@ class DataPanel(QWidget):
             QMessageBox.warning(self, "Insufficient Data", "Need at least 2 areas.")
             return
 
+        # Warning: empty areas (all taxa = 0)
+        empty_areas = []
+        for i, row in enumerate(current_data["matrix"]):
+            if all(v == 0 for v in row):
+                empty_areas.append(current_data["areas"][i])
+        if empty_areas:
+            reply = QMessageBox.warning(
+                self,
+                "Empty Areas",
+                f"The following areas have no taxa present:\n"
+                f"{', '.join(empty_areas)}\n\n"
+                f"This may result in 0.0 similarity values.\n"
+                f"Continue anyway?",
+                QMessageBox.Yes | QMessageBox.No,
+            )
+            if reply != QMessageBox.Yes:
+                return
+
+        # Warning: empty sheets (no data)
+        empty_sheets = []
+        for i in range(self.tab_widget.count()):
+            if self._is_global_tab(i):
+                continue
+            t = self._get_table_at(i)
+            if t is not None and (t.rowCount() == 0 or t.columnCount() == 0):
+                empty_sheets.append(self.tab_widget.tabText(i))
+        if empty_sheets:
+            QMessageBox.information(
+                self,
+                "Empty Sheets",
+                f"The following sheets have no data and will be skipped:\n{', '.join(empty_sheets)}",
+            )
+
         # Update Global tab first
         self._update_global_tab()
 
         # Local similarity: current tab
-        local_df = jaccard_similarity_from_presence(
-            current_data["areas"], current_data["taxa"], current_data["matrix"]
-        )
+        local_df = jaccard_similarity_from_presence(current_data["areas"], current_data["taxa"], current_data["matrix"])
 
         # Global similarity: union of all tabs
         all_sheets = [t.get_data() for t in tables]
         areas, union_taxa, union_matrix = union_presence_matrix(all_sheets)
         global_df = jaccard_similarity_from_presence(areas, union_taxa, union_matrix)
+
+        # Validate results
+        valid_local, msg_local = validate_similarity_matrix(local_df.values)
+        if not valid_local:
+            QMessageBox.warning(self, "Local Matrix Warning", f"Local similarity matrix issue:\n{msg_local}")
+
+        valid_global, msg_global = validate_similarity_matrix(global_df.values)
+        if not valid_global:
+            QMessageBox.warning(self, "Global Matrix Warning", f"Global similarity matrix issue:\n{msg_global}")
 
         # Send to LeftPanel via MainWindow
         main_window = self.window()
@@ -2980,6 +3403,7 @@ class DataPanel(QWidget):
         """Load project data from dict"""
         # Clear existing tabs (including Global)
         self._global_container = None
+        self.undo_stack.clear()
         while self.tab_widget.count() > 0:
             self.tab_widget.removeTab(0)
         for sheet in data.get("sheets", []):
@@ -3007,6 +3431,7 @@ class DataPanel(QWidget):
         while self.tab_widget.count() > 0:
             self.tab_widget.removeTab(0)
         self._current_file = None
+        self.undo_stack.clear()
         self.add_sheet(name="Sheet1")
 
     def save_file(self):

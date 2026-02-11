@@ -153,6 +153,7 @@ $RECYCLE.BIN/
 .settings/
 
 # Project specific
+*.accdata
 *.csv.bak
 *.log
 temp/
