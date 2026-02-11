@@ -3818,8 +3818,8 @@ class NMDSVisualizationWidget(QWidget):
             except Exception as e:
                 QMessageBox.critical(self, "Error", f"Failed to save image:\n{str(e)}")
 
-    def run_nmds(self, similarity_dict):
-        """Run NMDS on similarity dict and plot results"""
+    def run_nmds(self, similarity_dict, n_components=2):
+        """Run NMDS on similarity dict and plot results (2D or 3D)"""
         from sklearn.manifold import MDS
 
         from acc_utils import similarity_to_distance
@@ -3828,7 +3828,7 @@ class NMDSVisualizationWidget(QWidget):
         distance_matrix, labels = similarity_to_distance(similarity_dict)
 
         # Run NMDS (non-metric MDS)
-        mds = MDS(n_components=2, metric_mds=False, metric="precomputed",
+        mds = MDS(n_components=n_components, metric_mds=False, metric="precomputed",
                    init="random", random_state=42, n_init=4, max_iter=300,
                    normalized_stress="auto")
         coords = mds.fit_transform(distance_matrix)
@@ -3836,28 +3836,45 @@ class NMDSVisualizationWidget(QWidget):
 
         # Plot
         self.figure.clear()
-        ax = self.figure.add_subplot(111)
 
-        ax.scatter(coords[:, 0], coords[:, 1], s=80, c="#1976D2", edgecolors="white",
-                   linewidths=0.5, zorder=5)
+        if n_components == 3:
+            ax = self.figure.add_subplot(111, projection="3d")
 
-        # Add labels
-        for i, label in enumerate(labels):
-            ax.annotate(label, (coords[i, 0], coords[i, 1]),
-                        textcoords="offset points", xytext=(6, 6),
-                        fontsize=9, color="#333333")
+            ax.scatter(coords[:, 0], coords[:, 1], coords[:, 2],
+                       s=80, c="#1976D2", edgecolors="white", linewidths=0.5)
 
-        ax.set_title(f"NMDS (Stress = {stress:.4f})", fontsize=12, fontweight="bold")
-        ax.set_xlabel("NMDS 1", fontsize=10)
-        ax.set_ylabel("NMDS 2", fontsize=10)
-        ax.axhline(y=0, color="#cccccc", linewidth=0.5, zorder=0)
-        ax.axvline(x=0, color="#cccccc", linewidth=0.5, zorder=0)
-        ax.set_aspect("equal")
-        ax.grid(True, alpha=0.3)
+            for i, label in enumerate(labels):
+                ax.text(coords[i, 0], coords[i, 1], coords[i, 2],
+                        f"  {label}", fontsize=9, color="#333333")
+
+            ax.set_title(f"NMDS 3D (Stress = {stress:.4f})", fontsize=12, fontweight="bold")
+            ax.set_xlabel("NMDS 1", fontsize=9)
+            ax.set_ylabel("NMDS 2", fontsize=9)
+            ax.set_zlabel("NMDS 3", fontsize=9)
+        else:
+            ax = self.figure.add_subplot(111)
+
+            ax.scatter(coords[:, 0], coords[:, 1], s=80, c="#1976D2", edgecolors="white",
+                       linewidths=0.5, zorder=5)
+
+            for i, label in enumerate(labels):
+                ax.annotate(label, (coords[i, 0], coords[i, 1]),
+                            textcoords="offset points", xytext=(6, 6),
+                            fontsize=9, color="#333333")
+
+            ax.set_title(f"NMDS (Stress = {stress:.4f})", fontsize=12, fontweight="bold")
+            ax.set_xlabel("NMDS 1", fontsize=10)
+            ax.set_ylabel("NMDS 2", fontsize=10)
+            ax.axhline(y=0, color="#cccccc", linewidth=0.5, zorder=0)
+            ax.axvline(x=0, color="#cccccc", linewidth=0.5, zorder=0)
+            ax.set_aspect("equal")
+            ax.grid(True, alpha=0.3)
+
         self.figure.tight_layout()
         self.canvas.draw()
 
-        self.info_label.setText(f"Stress: {stress:.4f} | {len(labels)} areas")
+        dim_label = "3D" if n_components == 3 else "2D"
+        self.info_label.setText(f"{dim_label} | Stress: {stress:.4f} | {len(labels)} areas")
 
     def clear_display(self):
         """Clear the display"""
@@ -3889,6 +3906,19 @@ class NMDSPanel(ColumnPanel):
             }
         """)
         controls_layout.addWidget(self.matrix_combo)
+
+        # Dimension selector
+        controls_layout.addWidget(QLabel("Dim:"))
+        self.dim_combo = QComboBox()
+        self.dim_combo.addItems(["2D", "3D"])
+        self.dim_combo.setStyleSheet("""
+            QComboBox {
+                padding: 4px 8px;
+                border: 1px solid #ccc;
+                border-radius: 3px;
+            }
+        """)
+        controls_layout.addWidget(self.dim_combo)
 
         # Run button
         self.run_btn = QPushButton("Run NMDS")
@@ -4497,7 +4527,8 @@ class MainWindow(QMainWindow):
                 df = self.left_panel.global_matrix_widget.get_dataframe()
 
             similarity_dict = dict_matrix_from_dataframe(df)
-            self.nmds_panel.nmds_widget.run_nmds(similarity_dict)
+            n_components = 3 if self.nmds_panel.dim_combo.currentText() == "3D" else 2
+            self.nmds_panel.nmds_widget.run_nmds(similarity_dict, n_components=n_components)
 
         except Exception as e:
             QMessageBox.critical(self, "Error", f"Failed to run NMDS:\n{str(e)}")
