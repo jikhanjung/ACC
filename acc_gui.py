@@ -44,6 +44,7 @@ from PyQt5.QtWidgets import (
     QTableWidgetItem,
     QTabWidget,
     QTextEdit,
+    QToolBar,
     QUndoCommand,
     QUndoStack,
     QVBoxLayout,
@@ -4184,40 +4185,62 @@ class MainWindow(QMainWindow):
         self.right_panel = RightPanel()
         self.nmds_panel = NMDSPanel()
 
-        # Add to scroll areas
-        data_scroll = QScrollArea()
-        data_scroll.setWidgetResizable(True)
-        data_scroll.setWidget(self.data_panel)
+        # Add to scroll areas (instance variables for toggle access)
+        self.data_scroll = QScrollArea()
+        self.data_scroll.setWidgetResizable(True)
+        self.data_scroll.setWidget(self.data_panel)
 
-        left_scroll = QScrollArea()
-        left_scroll.setWidgetResizable(True)
-        left_scroll.setWidget(self.left_panel)
+        self.left_scroll = QScrollArea()
+        self.left_scroll.setWidgetResizable(True)
+        self.left_scroll.setWidget(self.left_panel)
 
-        center_scroll = QScrollArea()
-        center_scroll.setWidgetResizable(True)
-        center_scroll.setWidget(self.center_panel)
+        self.center_scroll = QScrollArea()
+        self.center_scroll.setWidgetResizable(True)
+        self.center_scroll.setWidget(self.center_panel)
 
-        right_scroll = QScrollArea()
-        right_scroll.setWidgetResizable(True)
-        right_scroll.setWidget(self.right_panel)
+        self.right_scroll = QScrollArea()
+        self.right_scroll.setWidgetResizable(True)
+        self.right_scroll.setWidget(self.right_panel)
 
-        nmds_scroll = QScrollArea()
-        nmds_scroll.setWidgetResizable(True)
-        nmds_scroll.setWidget(self.nmds_panel)
+        self.nmds_scroll = QScrollArea()
+        self.nmds_scroll.setWidgetResizable(True)
+        self.nmds_scroll.setWidget(self.nmds_panel)
 
         # Create splitter for resizable panels
-        splitter = QSplitter(Qt.Horizontal)
-        splitter.addWidget(data_scroll)
-        splitter.addWidget(left_scroll)
-        splitter.addWidget(center_scroll)
-        splitter.addWidget(right_scroll)
-        splitter.addWidget(nmds_scroll)
+        self.splitter = QSplitter(Qt.Horizontal)
+        self.splitter.addWidget(self.data_scroll)
+        self.splitter.addWidget(self.left_scroll)
+        self.splitter.addWidget(self.center_scroll)
+        self.splitter.addWidget(self.right_scroll)
+        self.splitter.addWidget(self.nmds_scroll)
 
         # Set initial sizes
-        splitter.setSizes([400, 450, 450, 500, 500])
+        self.splitter.setSizes([400, 450, 450, 500, 500])
 
         # Set central widget
-        self.setCentralWidget(splitter)
+        self.setCentralWidget(self.splitter)
+
+        # --- View menu & toolbar for panel show/hide ---
+        panel_names = ["Data", "Similarity", "Dendrogram", "ACC", "NMDS"]
+        self.panel_actions = []
+
+        menu_bar = self.menuBar()
+        view_menu = menu_bar.addMenu("View")
+
+        toolbar = self.addToolBar("Panels")
+
+        for i, name in enumerate(panel_names):
+            action = QAction(name, self)
+            action.setCheckable(True)
+            action.setChecked(True)
+            action.toggled.connect(lambda visible, idx=i: self.toggle_panel(idx, visible))
+            view_menu.addAction(action)
+            toolbar.addAction(action)
+            self.panel_actions.append(action)
+
+    def toggle_panel(self, index, visible):
+        """Show or hide a panel in the splitter by index."""
+        self.splitter.widget(index).setVisible(visible)
 
     def update_dendrogram(self, which="both"):
         """
