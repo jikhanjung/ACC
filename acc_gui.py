@@ -2995,9 +2995,22 @@ class DataPanel(QWidget):
 
         for key, label in SIMILARITY_METHODS.items():
             self.similarity_combo.addItem(label, key)
+        self.similarity_combo.currentIndexChanged.connect(self._on_similarity_method_changed)
         sim_method_layout.addWidget(self.similarity_combo)
+
+        # Raup-Crick iterations input
+        self.rc_iterations_label = QLabel("Iterations:")
+        self.rc_iterations_input = QLineEdit("10000")
+        self.rc_iterations_input.setFixedWidth(80)
+        self.rc_iterations_input.setToolTip("Number of Monte Carlo iterations for Raup-Crick (default: 10000)")
+        sim_method_layout.addWidget(self.rc_iterations_label)
+        sim_method_layout.addWidget(self.rc_iterations_input)
+
         sim_method_layout.addStretch()
         layout.addLayout(sim_method_layout)
+
+        # Initially hide Raup-Crick iterations input
+        self._on_similarity_method_changed()
 
         # ── Calculate Similarity button ──
         self.calc_btn = QPushButton("Calculate Similarity →")
@@ -3303,6 +3316,13 @@ class DataPanel(QWidget):
 
     # ── Similarity calculation ──
 
+    def _on_similarity_method_changed(self):
+        """Show/hide Raup-Crick iterations input based on selected method"""
+        method = self.similarity_combo.currentData()
+        is_raup_crick = (method == "raup_crick")
+        self.rc_iterations_label.setVisible(is_raup_crick)
+        self.rc_iterations_input.setVisible(is_raup_crick)
+
     def calculate_similarity(self):
         """Calculate local and global similarity and send to LeftPanel"""
         from acc_utils import similarity_from_presence, union_presence_matrix, validate_similarity_matrix
@@ -3370,15 +3390,34 @@ class DataPanel(QWidget):
         # Selected similarity method
         method = self.similarity_combo.currentData()
 
+        # Get Raup-Crick iterations if applicable
+        raup_crick_iterations = 10000  # default
+        if method == "raup_crick":
+            try:
+                raup_crick_iterations = int(self.rc_iterations_input.text())
+                if raup_crick_iterations < 1:
+                    raise ValueError("Iterations must be positive")
+            except ValueError:
+                QMessageBox.warning(
+                    self, "Invalid Input", "Raup-Crick iterations must be a positive integer. Using default (10000)."
+                )
+                raup_crick_iterations = 10000
+
         # Local similarity: current tab
         local_df = similarity_from_presence(
-            current_data["areas"], current_data["taxa"], current_data["matrix"], method=method
+            current_data["areas"],
+            current_data["taxa"],
+            current_data["matrix"],
+            method=method,
+            raup_crick_iterations=raup_crick_iterations,
         )
 
         # Global similarity: union of all tabs
         all_sheets = [t.get_data() for t in tables]
         areas, union_taxa, union_matrix = union_presence_matrix(all_sheets)
-        global_df = similarity_from_presence(areas, union_taxa, union_matrix, method=method)
+        global_df = similarity_from_presence(
+            areas, union_taxa, union_matrix, method=method, raup_crick_iterations=raup_crick_iterations
+        )
 
         # Validate results
         valid_local, msg_local = validate_similarity_matrix(local_df.values)

@@ -357,38 +357,41 @@ def jaccard_similarity_from_presence(areas, taxa, matrix):
 
 SIMILARITY_METHODS = {
     "jaccard": "Jaccard",
-    "dice": "Dice (Sørensen)",
-    "simpson": "Simpson",
     "ochiai": "Ochiai",
-    "braun_blanquet": "Braun-Blanquet",
+    "raup_crick": "Raup-Crick",
+    "simpson": "Simpson",
 }
 
 
-def similarity_from_presence(areas, taxa, matrix, method="jaccard"):
+def similarity_from_presence(areas, taxa, matrix, method="jaccard", raup_crick_iterations=10000):
     """
     Calculate similarity matrix from presence/absence data.
 
-    Supported methods (a=shared, b=i-only, c=j-only):
+    Supported methods (a=shared, b=i-only, c=j-only, N=total taxa):
         jaccard:       a / (a+b+c)
-        dice:          2a / (2a+b+c)
-        simpson:       a / min(a+b, a+c)
         ochiai:        a / sqrt((a+b)*(a+c))
-        braun_blanquet: a / max(a+b, a+c)
+        raup_crick:    Monte Carlo simulation-based probabilistic similarity
+                       (compares observed overlap to random null model)
+        simpson:       a / min(a+b, a+c)
 
     Args:
         areas: list of area names (row labels)
         taxa: list of taxon names (column labels)
         matrix: 2D list of 0/1 values, shape (len(areas), len(taxa))
         method: similarity method key (default "jaccard")
+        raup_crick_iterations: number of Monte Carlo iterations for Raup-Crick (default 999)
 
     Returns:
         pandas DataFrame with similarity values (areas x areas)
     """
     import math
+    import random
 
     import pandas as pd
 
     n = len(areas)
+    N = len(taxa)  # Total number of taxa in the pool
+
     # Convert rows to sets of present taxa indices
     taxa_sets = []
     for row in matrix:
@@ -412,17 +415,33 @@ def similarity_from_presence(areas, taxa, matrix, method="jaccard"):
             if method == "jaccard":
                 denom = a + b + c
                 val = a / denom if denom > 0 else 0.0
-            elif method == "dice":
-                denom = 2 * a + b + c
-                val = (2 * a) / denom if denom > 0 else 0.0
-            elif method == "simpson":
-                denom = min(a + b, a + c)
-                val = a / denom if denom > 0 else 0.0
             elif method == "ochiai":
                 denom = math.sqrt((a + b) * (a + c))
                 val = a / denom if denom > 0 else 0.0
-            elif method == "braun_blanquet":
-                denom = max(a + b, a + c)
+            elif method == "raup_crick":
+                # Monte Carlo simulation-based Raup-Crick similarity
+                # Compare observed overlap to random null model
+                if ni == 0 or nj == 0 or N == 0:
+                    val = 0.0
+                else:
+                    # Count how many random samples have >= observed overlap
+                    more_similar = 0
+                    taxa_pool = list(range(N))
+
+                    for _ in range(raup_crick_iterations):
+                        # Randomly sample ni and nj taxa from the pool
+                        random_i = set(random.sample(taxa_pool, ni))
+                        random_j = set(random.sample(taxa_pool, nj))
+                        random_shared = len(random_i & random_j)
+
+                        if random_shared >= a:
+                            more_similar += 1
+
+                    # Convert to similarity (lower p-value = more similar than random)
+                    p_value = more_similar / raup_crick_iterations
+                    val = 1.0 - p_value
+            elif method == "simpson":
+                denom = min(a + b, a + c)
                 val = a / denom if denom > 0 else 0.0
             else:
                 raise ValueError(f"Unknown similarity method: {method}")

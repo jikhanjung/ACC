@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- Raup-Crick similarity index with Monte Carlo simulation (10,000 iterations default)
+- GUI input field for Raup-Crick iteration count (dynamic visibility)
+- Four standardized similarity indices: Jaccard, Ochiai, Raup-Crick, Simpson
+
+### Changed
+- Similarity index selection reduced from 5 to 4 methods
+- Raup-Crick upgraded from deterministic to probabilistic implementation
+- Default Raup-Crick iterations increased to 10,000 for better accuracy
+
+### Removed
+- Dice (Sørensen) similarity index
+- Braun-Blanquet similarity index
+
 ## [0.0.4] - 2026-02-10
 
 ### Added
