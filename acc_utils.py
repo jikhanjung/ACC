@@ -6,6 +6,7 @@ Handles conversion between similarity matrices and dendrogram structures
 import numpy as np
 from scipy.cluster.hierarchy import linkage
 from scipy.spatial.distance import squareform
+
 from acc_core import DendroNode
 
 
@@ -118,7 +119,7 @@ def extract_clusters_from_dendro_filtered(root):
                 "theta": None,
                 "center": None,
                 "points": {},
-                "midline_angle": 0.0
+                "midline_angle": 0.0,
             })
         dfs(node.left)
         dfs(node.right)
@@ -127,7 +128,7 @@ def extract_clusters_from_dendro_filtered(root):
     return clusters
 
 
-def matrix_to_dendrogram(similarity_matrix, method='average'):
+def matrix_to_dendrogram(similarity_matrix, method="average"):
     """
     Convert similarity matrix to dendrogram structure
 
@@ -222,7 +223,10 @@ def validate_similarity_matrix(matrix):
                 diff = np.abs(arr - arr.T)
                 max_diff_idx = np.unravel_index(np.argmax(diff), diff.shape)
                 i, j = max_diff_idx
-                return False, f"Matrix is not symmetric: matrix[{i},{j}]={arr[i,j]:.6f} but matrix[{j},{i}]={arr[j,i]:.6f}"
+                return (
+                    False,
+                    f"Matrix is not symmetric: matrix[{i},{j}]={arr[i, j]:.6f} but matrix[{j},{i}]={arr[j, i]:.6f}",
+                )
 
             # Check diagonal
             diag = np.diag(arr)
@@ -257,7 +261,7 @@ def dict_matrix_from_dataframe(df):
     return matrix
 
 
-def build_acc_from_matrices(local_matrix, global_matrix, unit=1.0, method='average'):
+def build_acc_from_matrices(local_matrix, global_matrix, unit=1.0, method="average"):
     """
     Build ACC result directly from similarity matrices with multiple concentric circles
     This is a convenience function that handles the complete pipeline
@@ -273,7 +277,7 @@ def build_acc_from_matrices(local_matrix, global_matrix, unit=1.0, method='avera
             - 'clusters': list of positioned clusters
             - 'all_members': set of all members across all clusters
     """
-    from acc_core import build_acc, DendroNode
+    from acc_core import build_acc
 
     # Convert matrices to dendrograms
     local_dendro, local_labels = matrix_to_dendrogram(local_matrix, method=method)
@@ -285,7 +289,7 @@ def build_acc_from_matrices(local_matrix, global_matrix, unit=1.0, method='avera
     return acc_result
 
 
-def build_acc_from_matrices_steps(local_matrix, global_matrix, unit=1.0, method='average'):
+def build_acc_from_matrices_steps(local_matrix, global_matrix, unit=1.0, method="average"):
     """
     Build ACC step by step directly from similarity matrices
     This returns all intermediate states for visualization
@@ -299,7 +303,7 @@ def build_acc_from_matrices_steps(local_matrix, global_matrix, unit=1.0, method=
     Returns:
         steps: list of dicts, each containing step information
     """
-    from acc_core import build_acc_steps, DendroNode
+    from acc_core import build_acc_steps
 
     # Convert matrices to dendrograms
     local_dendro, local_labels = matrix_to_dendrogram(local_matrix, method=method)
@@ -311,7 +315,7 @@ def build_acc_from_matrices_steps(local_matrix, global_matrix, unit=1.0, method=
     return steps
 
 
-def build_acc_from_matrices_iterative(local_matrix, global_matrix, unit=1.0, method='average'):
+def build_acc_from_matrices_iterative(local_matrix, global_matrix, unit=1.0, method="average"):
     """
     Build ACC iteratively using the new algorithm (Option 1 approach)
     Always selects globally highest similarity at each step
@@ -338,6 +342,7 @@ def build_acc_from_matrices_iterative(local_matrix, global_matrix, unit=1.0, met
 def jaccard_similarity_from_presence(areas, taxa, matrix):
     """
     Calculate Jaccard similarity matrix from presence/absence data.
+    Backward-compatible wrapper around similarity_from_presence().
 
     Args:
         areas: list of area names (row labels)
@@ -347,6 +352,40 @@ def jaccard_similarity_from_presence(areas, taxa, matrix):
     Returns:
         pandas DataFrame with Jaccard similarity (areas x areas)
     """
+    return similarity_from_presence(areas, taxa, matrix, method="jaccard")
+
+
+SIMILARITY_METHODS = {
+    "jaccard": "Jaccard",
+    "dice": "Dice (Sørensen)",
+    "simpson": "Simpson",
+    "ochiai": "Ochiai",
+    "braun_blanquet": "Braun-Blanquet",
+}
+
+
+def similarity_from_presence(areas, taxa, matrix, method="jaccard"):
+    """
+    Calculate similarity matrix from presence/absence data.
+
+    Supported methods (a=shared, b=i-only, c=j-only):
+        jaccard:       a / (a+b+c)
+        dice:          2a / (2a+b+c)
+        simpson:       a / min(a+b, a+c)
+        ochiai:        a / sqrt((a+b)*(a+c))
+        braun_blanquet: a / max(a+b, a+c)
+
+    Args:
+        areas: list of area names (row labels)
+        taxa: list of taxon names (column labels)
+        matrix: 2D list of 0/1 values, shape (len(areas), len(taxa))
+        method: similarity method key (default "jaccard")
+
+    Returns:
+        pandas DataFrame with similarity values (areas x areas)
+    """
+    import math
+
     import pandas as pd
 
     n = len(areas)
@@ -364,9 +403,30 @@ def jaccard_similarity_from_presence(areas, taxa, matrix):
     for i in range(n):
         sim[i, i] = 1.0
         for j in range(i + 1, n):
-            intersection = len(taxa_sets[i] & taxa_sets[j])
-            union = len(taxa_sets[i] | taxa_sets[j])
-            val = intersection / union if union > 0 else 0.0
+            a = len(taxa_sets[i] & taxa_sets[j])
+            ni = len(taxa_sets[i])
+            nj = len(taxa_sets[j])
+            b = ni - a  # i-only
+            c = nj - a  # j-only
+
+            if method == "jaccard":
+                denom = a + b + c
+                val = a / denom if denom > 0 else 0.0
+            elif method == "dice":
+                denom = 2 * a + b + c
+                val = (2 * a) / denom if denom > 0 else 0.0
+            elif method == "simpson":
+                denom = min(a + b, a + c)
+                val = a / denom if denom > 0 else 0.0
+            elif method == "ochiai":
+                denom = math.sqrt((a + b) * (a + c))
+                val = a / denom if denom > 0 else 0.0
+            elif method == "braun_blanquet":
+                denom = max(a + b, a + c)
+                val = a / denom if denom > 0 else 0.0
+            else:
+                raise ValueError(f"Unknown similarity method: {method}")
+
             sim[i, j] = val
             sim[j, i] = val
 

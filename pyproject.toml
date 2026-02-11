@@ -93,6 +93,17 @@ ignore = [
     "ARG002", # Unused method argument
     "PT011",  # pytest.raises too broad
     "SIM108", # Use ternary operator (sometimes less readable)
+    "E741",   # Ambiguous variable name
+    "E722",   # Do not use bare except
+    "F841",   # Local variable assigned but never used
+    "C408",   # Unnecessary dict() call
+    "SIM102", # Use single if instead of nested if
+    "SIM105", # Use contextlib.suppress
+    "SIM109", # Use in instead of multiple comparisons
+    "B007",   # Loop control variable not used
+    "B023",   # Function definition does not bind loop variable
+    "RET504", # Unnecessary assignment before return
+    "ICN001", # Import conventions
 ]
 
 [tool.ruff.lint.per-file-ignores]

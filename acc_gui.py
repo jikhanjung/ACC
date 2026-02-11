@@ -24,6 +24,7 @@ from PyQt5.QtWidgets import (
     QAction,
     QApplication,
     QCheckBox,
+    QComboBox,
     QDialog,
     QDialogButtonBox,
     QFileDialog,
@@ -2985,6 +2986,19 @@ class DataPanel(QWidget):
         import_layout.addStretch()
         layout.addLayout(import_layout)
 
+        # ── Similarity method selector ──
+        sim_method_layout = QHBoxLayout()
+        sim_method_label = QLabel("Similarity:")
+        sim_method_layout.addWidget(sim_method_label)
+        self.similarity_combo = QComboBox()
+        from acc_utils import SIMILARITY_METHODS
+
+        for key, label in SIMILARITY_METHODS.items():
+            self.similarity_combo.addItem(label, key)
+        sim_method_layout.addWidget(self.similarity_combo)
+        sim_method_layout.addStretch()
+        layout.addLayout(sim_method_layout)
+
         # ── Calculate Similarity button ──
         self.calc_btn = QPushButton("Calculate Similarity →")
         self.calc_btn.setStyleSheet("""
@@ -3291,7 +3305,7 @@ class DataPanel(QWidget):
 
     def calculate_similarity(self):
         """Calculate local and global similarity and send to LeftPanel"""
-        from acc_utils import jaccard_similarity_from_presence, union_presence_matrix, validate_similarity_matrix
+        from acc_utils import similarity_from_presence, union_presence_matrix, validate_similarity_matrix
 
         tables = self._all_tables()
         if not tables:
@@ -3353,13 +3367,18 @@ class DataPanel(QWidget):
         # Update Global tab first
         self._update_global_tab()
 
+        # Selected similarity method
+        method = self.similarity_combo.currentData()
+
         # Local similarity: current tab
-        local_df = jaccard_similarity_from_presence(current_data["areas"], current_data["taxa"], current_data["matrix"])
+        local_df = similarity_from_presence(
+            current_data["areas"], current_data["taxa"], current_data["matrix"], method=method
+        )
 
         # Global similarity: union of all tabs
         all_sheets = [t.get_data() for t in tables]
         areas, union_taxa, union_matrix = union_presence_matrix(all_sheets)
-        global_df = jaccard_similarity_from_presence(areas, union_taxa, union_matrix)
+        global_df = similarity_from_presence(areas, union_taxa, union_matrix, method=method)
 
         # Validate results
         valid_local, msg_local = validate_similarity_matrix(local_df.values)
