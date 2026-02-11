@@ -333,3 +333,93 @@ def build_acc_from_matrices_iterative(local_matrix, global_matrix, unit=1.0, met
     steps = build_acc_iterative(local_matrix, global_matrix, unit=unit, method=method)
 
     return steps
+
+
+def jaccard_similarity_from_presence(areas, taxa, matrix):
+    """
+    Calculate Jaccard similarity matrix from presence/absence data.
+
+    Args:
+        areas: list of area names (row labels)
+        taxa: list of taxon names (column labels)
+        matrix: 2D list of 0/1 values, shape (len(areas), len(taxa))
+
+    Returns:
+        pandas DataFrame with Jaccard similarity (areas x areas)
+    """
+    import pandas as pd
+
+    n = len(areas)
+    # Convert rows to sets of present taxa indices
+    taxa_sets = []
+    for row in matrix:
+        s = set()
+        for j, v in enumerate(row):
+            if v:
+                s.add(j)
+        taxa_sets.append(s)
+
+    # Build similarity matrix
+    sim = np.zeros((n, n))
+    for i in range(n):
+        sim[i, i] = 1.0
+        for j in range(i + 1, n):
+            intersection = len(taxa_sets[i] & taxa_sets[j])
+            union = len(taxa_sets[i] | taxa_sets[j])
+            val = intersection / union if union > 0 else 0.0
+            sim[i, j] = val
+            sim[j, i] = val
+
+    return pd.DataFrame(sim, index=areas, columns=areas)
+
+
+def union_presence_matrix(all_sheets):
+    """
+    Merge multiple presence/absence sheets into a single union matrix.
+
+    Each sheet has areas (rows) and taxa (columns). All sheets must share
+    the same area list. Taxa are unioned across sheets. If a taxon is present
+    (1) in ANY sheet for a given area, it is present in the union.
+
+    Args:
+        all_sheets: list of dicts, each with keys:
+            "areas": list of area names
+            "taxa": list of taxon names
+            "matrix": 2D list of 0/1 values
+
+    Returns:
+        (areas, union_taxa, union_matrix) where:
+            areas: list of area names
+            union_taxa: sorted list of all unique taxa
+            union_matrix: 2D list (len(areas) x len(union_taxa))
+    """
+    if not all_sheets:
+        return [], [], []
+
+    areas = all_sheets[0]["areas"]
+
+    # Collect all unique taxa (natural sort: t1, t2, ..., t10)
+    import re
+
+    def _natural_key(s):
+        return [int(c) if c.isdigit() else c.lower() for c in re.split(r"(\d+)", s)]
+
+    all_taxa = set()
+    for sheet in all_sheets:
+        all_taxa.update(sheet["taxa"])
+    union_taxa = sorted(all_taxa, key=_natural_key)
+    taxa_to_idx = {t: i for i, t in enumerate(union_taxa)}
+
+    # Build union matrix
+    n_areas = len(areas)
+    n_taxa = len(union_taxa)
+    union_matrix = [[0] * n_taxa for _ in range(n_areas)]
+
+    for sheet in all_sheets:
+        for r, row in enumerate(sheet["matrix"]):
+            for c, val in enumerate(row):
+                if val and c < len(sheet["taxa"]):
+                    col_idx = taxa_to_idx[sheet["taxa"][c]]
+                    union_matrix[r][col_idx] = 1
+
+    return areas, union_taxa, union_matrix

@@ -2211,9 +2211,17 @@ class PresenceAbsenceTable(QTableWidget):
             }
         """)
 
-        # Header click for renaming
+        # Header double-click for renaming
         self.horizontalHeader().sectionDoubleClicked.connect(self._rename_taxon)
-        self.verticalHeader().sectionDoubleClicked.connect(self._rename_area)
+        self.verticalHeader().sectionDoubleClicked.connect(self._on_area_header_dblclick)
+
+    def _on_area_header_dblclick(self, row):
+        """Route area rename through DataPanel for sync, or handle locally"""
+        dp = self._find_data_panel()
+        if dp:
+            dp.sync_rename_area(row)
+        else:
+            self._rename_area(row)
 
     # ── data access ──
 
@@ -2272,13 +2280,21 @@ class PresenceAbsenceTable(QTableWidget):
         idx = self.indexAt(pos)
         row, col = idx.row(), idx.column()
 
-        # Row (Area) operations
+        # Row (Area) operations — delegate to DataPanel if available
+        data_panel = self._find_data_panel()
         row_menu = menu.addMenu("Area (Row)")
-        row_menu.addAction("Add Area Above", lambda: self._add_area(row))
-        row_menu.addAction("Add Area Below", lambda: self._add_area(row + 1))
-        if self.rowCount() > 0:
-            row_menu.addAction("Rename Area", lambda: self._rename_area(row))
-            row_menu.addAction("Delete Area", lambda: self._delete_area(row))
+        if data_panel:
+            row_menu.addAction("Add Area Above", lambda: data_panel.sync_add_area(row))
+            row_menu.addAction("Add Area Below", lambda: data_panel.sync_add_area(row + 1))
+            if self.rowCount() > 0:
+                row_menu.addAction("Rename Area", lambda: data_panel.sync_rename_area(row))
+                row_menu.addAction("Delete Area", lambda: data_panel.sync_delete_area(row))
+        else:
+            row_menu.addAction("Add Area Above", lambda: self._add_area(row))
+            row_menu.addAction("Add Area Below", lambda: self._add_area(row + 1))
+            if self.rowCount() > 0:
+                row_menu.addAction("Rename Area", lambda: self._rename_area(row))
+                row_menu.addAction("Delete Area", lambda: self._delete_area(row))
 
         # Column (Taxon) operations
         col_menu = menu.addMenu("Taxon (Column)")
@@ -2293,6 +2309,15 @@ class PresenceAbsenceTable(QTableWidget):
         menu.addAction("Fill Selected = 0", lambda: self._fill_selection(0))
 
         menu.exec_(self.viewport().mapToGlobal(pos))
+
+    def _find_data_panel(self):
+        """Walk up the widget tree to find the DataPanel parent"""
+        p = self.parent()
+        while p is not None:
+            if isinstance(p, DataPanel):
+                return p
+            p = p.parent()
+        return None
 
     def _fill_selection(self, value):
         for item in self.selectedItems():
@@ -2374,7 +2399,8 @@ class PresenceAbsenceTable(QTableWidget):
         if event.matches(QKeySequence.Copy):
             self._copy_selection()
         elif event.matches(QKeySequence.Paste):
-            self._paste_selection()
+            if self.editTriggers() != QTableWidget.NoEditTriggers:
+                self._paste_selection()
         else:
             super().keyPressEvent(event)
 
@@ -2480,9 +2506,12 @@ class PresenceAbsenceTable(QTableWidget):
 class DataPanel(QWidget):
     """Leftmost panel: Raw presence/absence data with multi-sheet (period) tabs"""
 
+    GLOBAL_TAB_NAME = "Global"
+
     def __init__(self, parent=None):
         super().__init__(parent)
         self._current_file = None
+        self._global_container = None  # container widget for the Global tab
         self.init_ui()
 
     def init_ui(self):
@@ -2535,6 +2564,7 @@ class DataPanel(QWidget):
                 background: #e3f2fd; font-weight: bold;
             }
         """)
+        self.tab_widget.currentChanged.connect(self._on_tab_changed)
         layout.addWidget(self.tab_widget, stretch=1)
 
         # ── Sheet management buttons ──
@@ -2568,6 +2598,19 @@ class DataPanel(QWidget):
         import_layout.addStretch()
         layout.addLayout(import_layout)
 
+        # ── Calculate Similarity button ──
+        self.calc_btn = QPushButton("Calculate Similarity →")
+        self.calc_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #E65100; color: white;
+                padding: 8px 16px; border-radius: 4px;
+                font-size: 12px; font-weight: bold;
+            }
+            QPushButton:hover { background-color: #BF360C; }
+        """)
+        self.calc_btn.clicked.connect(self.calculate_similarity)
+        layout.addWidget(self.calc_btn)
+
         self.setLayout(layout)
 
     # ── Sheet management ──
@@ -2582,13 +2625,24 @@ class DataPanel(QWidget):
         # Container wrapping a table
         return getattr(w, "_table", None)
 
+    def _get_existing_areas(self):
+        """Get area list from the first existing tab, or empty list"""
+        for i in range(self.tab_widget.count()):
+            t = self._get_table_at(i)
+            if t is not None and t.areas:
+                return list(t.areas)
+        return []
+
     def add_sheet(self, name=None):
         """Add a new empty sheet"""
         if name is None or isinstance(name, bool):
-            name, ok = QInputDialog.getText(self, "Add Sheet", "Sheet name (e.g., period):")
-            if not ok or not name.strip():
-                return None
-            name = name.strip()
+            # Generate default name (count only data tabs, not Global)
+            n_data = len(self._all_tables())
+            idx = n_data + 1
+            existing = {self.tab_widget.tabText(i) for i in range(self.tab_widget.count())}
+            while f"new_{idx}" in existing:
+                idx += 1
+            name = f"new_{idx}"
         # Wrap table in a container with toolbar
         container = QWidget()
         container_layout = QVBoxLayout()
@@ -2625,7 +2679,7 @@ class DataPanel(QWidget):
         container.setLayout(container_layout)
 
         # Connect toolbar buttons
-        add_area_btn.clicked.connect(lambda: table._add_area(table.rowCount()))
+        add_area_btn.clicked.connect(lambda: self.sync_add_area(table.rowCount()))
         add_taxon_btn.clicked.connect(lambda: table._add_taxon(table.columnCount()))
 
         # Store table reference on the container
@@ -2644,19 +2698,30 @@ class DataPanel(QWidget):
         self.tab_widget.addTab(container, name)
         self.tab_widget.setCurrentWidget(container)
 
-        # Initialize with default grid for new empty sheets
+        # Initialize: inherit areas from existing tabs, or use defaults
         if table.rowCount() == 0 and table.columnCount() == 0:
-            default_areas = ["Area_1", "Area_2", "Area_3"]
-            default_taxa = ["Taxon_1", "Taxon_2", "Taxon_3"]
-            default_matrix = [[0] * 3 for _ in range(3)]
-            table.set_data(default_areas, default_taxa, default_matrix)
+            existing = self._get_existing_areas()
+            if existing:
+                # Inherit area list from other tabs, start with empty taxa
+                default_taxa = ["Taxon_1", "Taxon_2", "Taxon_3"]
+                default_matrix = [[0] * len(default_taxa) for _ in range(len(existing))]
+                table.set_data(existing, default_taxa, default_matrix)
+            else:
+                default_areas = ["Area_1", "Area_2", "Area_3"]
+                default_taxa = ["Taxon_1", "Taxon_2", "Taxon_3"]
+                default_matrix = [[0] * 3 for _ in range(3)]
+                table.set_data(default_areas, default_taxa, default_matrix)
             update_info()
 
+        self._update_global_tab()
         return table
 
     def rename_current_sheet(self):
         idx = self.tab_widget.currentIndex()
         if idx < 0:
+            return
+        if self._is_global_tab(idx):
+            QMessageBox.information(self, "Info", "The Global tab cannot be renamed.")
             return
         old_name = self.tab_widget.tabText(idx)
         name, ok = QInputDialog.getText(self, "Rename Sheet", "New name:", text=old_name)
@@ -2667,6 +2732,9 @@ class DataPanel(QWidget):
         idx = self.tab_widget.currentIndex()
         if idx < 0:
             return
+        if self._is_global_tab(idx):
+            QMessageBox.information(self, "Info", "The Global tab cannot be deleted.")
+            return
         name = self.tab_widget.tabText(idx)
         reply = QMessageBox.question(
             self,
@@ -2676,6 +2744,215 @@ class DataPanel(QWidget):
         )
         if reply == QMessageBox.Yes:
             self.tab_widget.removeTab(idx)
+            self._update_global_tab()
+
+    # ── Area synchronization across all tabs ──
+
+    def _is_global_tab(self, index):
+        """Check if the tab at index is the Global (union) tab"""
+        w = self.tab_widget.widget(index)
+        return w is self._global_container
+
+    def _on_tab_changed(self, index):
+        """When Global tab is clicked, refresh its data"""
+        if index >= 0 and self._is_global_tab(index):
+            self._update_global_tab()
+
+    def _all_tables(self, include_global=False):
+        """Return list of all PresenceAbsenceTable widgets (excluding Global tab by default)"""
+        tables = []
+        for i in range(self.tab_widget.count()):
+            if not include_global and self._is_global_tab(i):
+                continue
+            t = self._get_table_at(i)
+            if t is not None:
+                tables.append(t)
+        return tables
+
+    def _update_global_tab(self):
+        """Create or update the Global (union) read-only tab"""
+        from acc_utils import union_presence_matrix
+
+        data_tables = self._all_tables(include_global=False)
+        if not data_tables:
+            # Remove global tab if no data sheets
+            if self._global_container is not None:
+                idx = self.tab_widget.indexOf(self._global_container)
+                if idx >= 0:
+                    self.tab_widget.removeTab(idx)
+                self._global_container = None
+            return
+
+        # Collect sheet data
+        all_sheets = [t.get_data() for t in data_tables]
+        areas, union_taxa, union_matrix = union_presence_matrix(all_sheets)
+
+        if not areas or not union_taxa:
+            return
+
+        # Create or reuse global container
+        if self._global_container is None:
+            container = QWidget()
+            container_layout = QVBoxLayout()
+            container_layout.setContentsMargins(0, 0, 0, 0)
+            container_layout.setSpacing(2)
+
+            info_label = QLabel("")
+            info_label.setStyleSheet("font-size: 9px; color: #666; font-style: italic;")
+            container_layout.addWidget(info_label)
+
+            table = PresenceAbsenceTable(self)
+            # Make read-only: disable editing and context menu
+            table.setEditTriggers(QTableWidget.NoEditTriggers)
+            table.setContextMenuPolicy(Qt.NoContextMenu)
+            # Disconnect toggle on double-click
+            try:
+                table.cellDoubleClicked.disconnect(table._toggle_cell)
+            except TypeError:
+                pass
+            table.setStyleSheet("""
+                QTableWidget {
+                    font-size: 11px;
+                    gridline-color: #999;
+                    background-color: #f5f5f5;
+                }
+                QTableWidget::item {
+                    border: 1px solid #bbb;
+                    padding: 2px;
+                }
+            """)
+            container_layout.addWidget(table, stretch=1)
+            container.setLayout(container_layout)
+            container._table = table
+            container._info_label = info_label
+            self._global_container = container
+
+        # Update table data
+        global_table = self._global_container._table
+        global_table.set_data(areas, union_taxa, union_matrix)
+        self._global_container._info_label.setText(
+            f"Read-only union of {len(data_tables)} sheet(s): "
+            f"{len(areas)} areas x {len(union_taxa)} taxa"
+        )
+
+        # Add Global tab if not yet present; keep it at the end
+        idx = self.tab_widget.indexOf(self._global_container)
+        last = self.tab_widget.count() - 1
+        if idx < 0:
+            # Not in tab widget yet — add at end
+            self.tab_widget.blockSignals(True)
+            self.tab_widget.addTab(self._global_container, self.GLOBAL_TAB_NAME)
+            self.tab_widget.blockSignals(False)
+        elif idx != last:
+            # Exists but not last — move to end
+            self.tab_widget.blockSignals(True)
+            self.tab_widget.removeTab(idx)
+            self.tab_widget.addTab(self._global_container, self.GLOBAL_TAB_NAME)
+            self.tab_widget.blockSignals(False)
+
+        # Style the Global tab differently
+        global_idx = self.tab_widget.indexOf(self._global_container)
+        self.tab_widget.tabBar().setTabTextColor(global_idx, QColor("#1565C0"))
+
+    def sync_add_area(self, at_row):
+        """Add an area to ALL tabs at the same row position"""
+        name, ok = QInputDialog.getText(self, "Add Area", "Area name:")
+        if not ok or not name.strip():
+            return
+        name = name.strip()
+        for table in self._all_tables():
+            at = max(0, min(at_row, table.rowCount()))
+            table.insertRow(at)
+            table.areas.insert(at, name)
+            table.setVerticalHeaderLabels(table.areas)
+            for c in range(table.columnCount()):
+                table._set_cell(at, c, 0)
+        self._update_global_tab()
+
+    def sync_rename_area(self, row):
+        """Rename an area across ALL tabs"""
+        tables = self._all_tables()
+        if not tables or row < 0 or row >= tables[0].rowCount():
+            return
+        old_name = tables[0].areas[row]
+        name, ok = QInputDialog.getText(self, "Rename Area", "New name:", text=old_name)
+        if ok and name.strip():
+            name = name.strip()
+            for table in tables:
+                if row < len(table.areas):
+                    table.areas[row] = name
+                    table.setVerticalHeaderLabels(table.areas)
+            self._update_global_tab()
+
+    def sync_delete_area(self, row):
+        """Delete an area from ALL tabs"""
+        tables = self._all_tables()
+        if not tables or row < 0 or row >= tables[0].rowCount():
+            return
+        area_name = tables[0].areas[row]
+        reply = QMessageBox.question(
+            self,
+            "Delete Area",
+            f"Delete area '{area_name}' from all sheets?",
+            QMessageBox.Yes | QMessageBox.No,
+        )
+        if reply == QMessageBox.Yes:
+            for table in tables:
+                if row < table.rowCount():
+                    table.removeRow(row)
+                    table.areas.pop(row)
+            self._update_global_tab()
+
+    # ── Similarity calculation ──
+
+    def calculate_similarity(self):
+        """Calculate local and global similarity and send to LeftPanel"""
+        from acc_utils import jaccard_similarity_from_presence, union_presence_matrix
+
+        tables = self._all_tables()
+        if not tables:
+            QMessageBox.warning(self, "No Data", "No sheets available.")
+            return
+
+        # Check if Global tab is selected — use first data tab instead
+        cur_idx = self.tab_widget.currentIndex()
+        if cur_idx >= 0 and self._is_global_tab(cur_idx):
+            QMessageBox.warning(
+                self, "Select a Sheet",
+                "Please select a data sheet (not Global) for local similarity calculation."
+            )
+            return
+
+        # Get current tab data for local similarity
+        current_table = self._current_table()
+        if current_table is None:
+            QMessageBox.warning(self, "No Data", "No active sheet selected.")
+            return
+
+        current_data = current_table.get_data()
+        if len(current_data["areas"]) < 2:
+            QMessageBox.warning(self, "Insufficient Data", "Need at least 2 areas.")
+            return
+
+        # Update Global tab first
+        self._update_global_tab()
+
+        # Local similarity: current tab
+        local_df = jaccard_similarity_from_presence(
+            current_data["areas"], current_data["taxa"], current_data["matrix"]
+        )
+
+        # Global similarity: union of all tabs
+        all_sheets = [t.get_data() for t in tables]
+        areas, union_taxa, union_matrix = union_presence_matrix(all_sheets)
+        global_df = jaccard_similarity_from_presence(areas, union_taxa, union_matrix)
+
+        # Send to LeftPanel via MainWindow
+        main_window = self.window()
+        if isinstance(main_window, MainWindow):
+            main_window.left_panel.local_matrix_widget.update_matrix(local_df)
+            main_window.left_panel.global_matrix_widget.update_matrix(global_df)
+            main_window.update_dendrogram("both")
 
     # ── Project data serialization ──
 
@@ -2687,9 +2964,11 @@ class DataPanel(QWidget):
         return getattr(w, "_table", None)
 
     def get_all_data(self):
-        """Collect all sheets into a serializable dict"""
+        """Collect all sheets into a serializable dict (excludes Global tab)"""
         sheets = []
         for i in range(self.tab_widget.count()):
+            if self._is_global_tab(i):
+                continue
             table = self._get_table_at(i)
             if table is not None:
                 d = table.get_data()
@@ -2699,7 +2978,8 @@ class DataPanel(QWidget):
 
     def set_all_data(self, data):
         """Load project data from dict"""
-        # Clear existing tabs
+        # Clear existing tabs (including Global)
+        self._global_container = None
         while self.tab_widget.count() > 0:
             self.tab_widget.removeTab(0)
         for sheet in data.get("sheets", []):
@@ -2709,6 +2989,7 @@ class DataPanel(QWidget):
                 sheet.get("taxa", []),
                 sheet.get("matrix", []),
             )
+        self._update_global_tab()
 
     # ── File operations ──
 
