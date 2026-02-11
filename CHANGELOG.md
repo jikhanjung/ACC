@@ -8,6 +8,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- NMDS (Non-metric Multidimensional Scaling) 패널 추가 (5번째 패널)
+  - Local/Global 유사도 행렬 선택 콤보박스
+  - scikit-learn MDS(metric_mds=False)를 이용한 비계량 다차원척도법
+  - 2D 산점도 시각화 (area 이름 라벨, Stress 값 표시)
+  - 우클릭 이미지 저장 (PNG/PDF/SVG)
+- `scikit-learn>=1.6.0` 의존성 추가
 - Raup-Crick similarity index with Monte Carlo simulation (10,000 iterations default)
 - GUI input field for Raup-Crick iteration count (dynamic visibility)
 - Four standardized similarity indices: Jaccard, Ochiai, Raup-Crick, Simpson

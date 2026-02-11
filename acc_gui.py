@@ -3765,6 +3765,165 @@ class CenterPanel(ColumnPanel):
         self.content_layout.addWidget(self.global_dendro_widget, stretch=1)
 
 
+class NMDSVisualizationWidget(QWidget):
+    """Widget for displaying NMDS 2D scatter plot"""
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.init_ui()
+
+    def init_ui(self):
+        layout = QVBoxLayout()
+        layout.setContentsMargins(0, 0, 0, 0)
+
+        # Matplotlib figure
+        self.figure = Figure(figsize=(6, 6))
+        self.canvas = FigureCanvas(self.figure)
+
+        # Enable right-click context menu for saving
+        self.canvas.setContextMenuPolicy(Qt.CustomContextMenu)
+        self.canvas.customContextMenuRequested.connect(self.show_context_menu)
+
+        layout.addWidget(self.canvas, stretch=1)
+
+        # Info label
+        self.info_label = QLabel("Select matrix type and click Run NMDS")
+        self.info_label.setStyleSheet("color: gray; font-style: italic; font-size: 10px;")
+        self.info_label.setAlignment(Qt.AlignCenter)
+        layout.addWidget(self.info_label)
+
+        self.setLayout(layout)
+
+    def show_context_menu(self, pos):
+        """Show context menu for saving image"""
+        menu = QMenu(self)
+        save_action = QAction("Save Image As...", self)
+        save_action.triggered.connect(self.save_image)
+        menu.addAction(save_action)
+        menu.exec_(self.canvas.mapToGlobal(pos))
+
+    def save_image(self):
+        """Save the current figure to an image file"""
+        file_path, _ = QFileDialog.getSaveFileName(
+            self,
+            "Save NMDS Visualization",
+            "NMDS_visualization.png",
+            "PNG Files (*.png);;PDF Files (*.pdf);;SVG Files (*.svg);;All Files (*)",
+        )
+        if file_path:
+            try:
+                self.figure.savefig(file_path, dpi=300, bbox_inches="tight")
+                QMessageBox.information(self, "Success", f"Image saved successfully to:\n{file_path}")
+            except Exception as e:
+                QMessageBox.critical(self, "Error", f"Failed to save image:\n{str(e)}")
+
+    def run_nmds(self, similarity_dict):
+        """Run NMDS on similarity dict and plot results"""
+        from sklearn.manifold import MDS
+
+        from acc_utils import similarity_to_distance
+
+        # Convert similarity to distance
+        distance_matrix, labels = similarity_to_distance(similarity_dict)
+
+        # Run NMDS (non-metric MDS)
+        mds = MDS(n_components=2, metric_mds=False, metric="precomputed",
+                   init="random", random_state=42, n_init=4, max_iter=300,
+                   normalized_stress="auto")
+        coords = mds.fit_transform(distance_matrix)
+        stress = mds.stress_
+
+        # Plot
+        self.figure.clear()
+        ax = self.figure.add_subplot(111)
+
+        ax.scatter(coords[:, 0], coords[:, 1], s=80, c="#1976D2", edgecolors="white",
+                   linewidths=0.5, zorder=5)
+
+        # Add labels
+        for i, label in enumerate(labels):
+            ax.annotate(label, (coords[i, 0], coords[i, 1]),
+                        textcoords="offset points", xytext=(6, 6),
+                        fontsize=9, color="#333333")
+
+        ax.set_title(f"NMDS (Stress = {stress:.4f})", fontsize=12, fontweight="bold")
+        ax.set_xlabel("NMDS 1", fontsize=10)
+        ax.set_ylabel("NMDS 2", fontsize=10)
+        ax.axhline(y=0, color="#cccccc", linewidth=0.5, zorder=0)
+        ax.axvline(x=0, color="#cccccc", linewidth=0.5, zorder=0)
+        ax.set_aspect("equal")
+        ax.grid(True, alpha=0.3)
+        self.figure.tight_layout()
+        self.canvas.draw()
+
+        self.info_label.setText(f"Stress: {stress:.4f} | {len(labels)} areas")
+
+    def clear_display(self):
+        """Clear the display"""
+        self.figure.clear()
+        self.canvas.draw()
+        self.info_label.setText("Select matrix type and click Run NMDS")
+
+
+class NMDSPanel(ColumnPanel):
+    """NMDS panel: Non-metric Multidimensional Scaling visualization"""
+
+    def __init__(self, parent=None):
+        super().__init__("NMDS", parent)
+        self.setup_content()
+
+    def setup_content(self):
+        # Controls layout
+        controls_layout = QHBoxLayout()
+
+        # Matrix type selector
+        controls_layout.addWidget(QLabel("Matrix:"))
+        self.matrix_combo = QComboBox()
+        self.matrix_combo.addItems(["Local", "Global"])
+        self.matrix_combo.setStyleSheet("""
+            QComboBox {
+                padding: 4px 8px;
+                border: 1px solid #ccc;
+                border-radius: 3px;
+            }
+        """)
+        controls_layout.addWidget(self.matrix_combo)
+
+        # Run button
+        self.run_btn = QPushButton("Run NMDS")
+        self.run_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #FF9800;
+                color: white;
+                font-size: 12px;
+                font-weight: bold;
+                padding: 8px 16px;
+                border-radius: 4px;
+            }
+            QPushButton:hover {
+                background-color: #F57C00;
+            }
+            QPushButton:pressed {
+                background-color: #E65100;
+            }
+        """)
+        self.run_btn.clicked.connect(self.on_run_clicked)
+        controls_layout.addWidget(self.run_btn)
+
+        controls_layout.addStretch()
+        self.content_layout.addLayout(controls_layout)
+
+        # NMDS visualization widget
+        self.nmds_widget = NMDSVisualizationWidget()
+        self.content_layout.addWidget(self.nmds_widget, stretch=1)
+
+    def on_run_clicked(self):
+        """Handle Run NMDS button click"""
+        main_window = self.window()
+        if isinstance(main_window, MainWindow):
+            main_window.run_nmds()
+
+
 class RightPanel(ColumnPanel):
     """Right panel: ACC visualization with tabs for ACC1 and ACC2"""
 
@@ -4006,7 +4165,7 @@ class RightPanel(ColumnPanel):
 
 
 class MainWindow(QMainWindow):
-    """Main application window with 4-column layout and step-by-step visualization"""
+    """Main application window with 5-column layout and step-by-step visualization"""
 
     def __init__(self):
         super().__init__()
@@ -4016,13 +4175,14 @@ class MainWindow(QMainWindow):
 
     def init_ui(self):
         self.setWindowTitle("ACC Visualizer - Step-by-Step Clustering")
-        self.setGeometry(50, 50, 2100, 900)
+        self.setGeometry(50, 50, 2400, 900)
 
-        # Create four panels
+        # Create five panels
         self.data_panel = DataPanel()
         self.left_panel = LeftPanel()
         self.center_panel = CenterPanel()
         self.right_panel = RightPanel()
+        self.nmds_panel = NMDSPanel()
 
         # Add to scroll areas
         data_scroll = QScrollArea()
@@ -4041,15 +4201,20 @@ class MainWindow(QMainWindow):
         right_scroll.setWidgetResizable(True)
         right_scroll.setWidget(self.right_panel)
 
+        nmds_scroll = QScrollArea()
+        nmds_scroll.setWidgetResizable(True)
+        nmds_scroll.setWidget(self.nmds_panel)
+
         # Create splitter for resizable panels
         splitter = QSplitter(Qt.Horizontal)
         splitter.addWidget(data_scroll)
         splitter.addWidget(left_scroll)
         splitter.addWidget(center_scroll)
         splitter.addWidget(right_scroll)
+        splitter.addWidget(nmds_scroll)
 
-        # Set initial sizes (data: 400, left: 450, center: 450, right: 600)
-        splitter.setSizes([400, 450, 450, 600])
+        # Set initial sizes
+        splitter.setSizes([400, 450, 450, 500, 500])
 
         # Set central widget
         self.setCentralWidget(splitter)
@@ -4290,6 +4455,30 @@ class MainWindow(QMainWindow):
             QMessageBox.critical(self, "Error", f"Failed to generate ACC2 visualization:\n{str(e)}")
             import traceback
 
+            traceback.print_exc()
+
+    def run_nmds(self):
+        """Run NMDS based on selected matrix type"""
+        try:
+            matrix_type = self.nmds_panel.matrix_combo.currentText()
+
+            if matrix_type == "Local":
+                if not self.left_panel.local_matrix_widget.is_loaded():
+                    QMessageBox.warning(self, "Missing Data", "Please load the Local Similarity Matrix first")
+                    return
+                df = self.left_panel.local_matrix_widget.get_dataframe()
+            else:
+                if not self.left_panel.global_matrix_widget.is_loaded():
+                    QMessageBox.warning(self, "Missing Data", "Please load the Global Similarity Matrix first")
+                    return
+                df = self.left_panel.global_matrix_widget.get_dataframe()
+
+            similarity_dict = dict_matrix_from_dataframe(df)
+            self.nmds_panel.nmds_widget.run_nmds(similarity_dict)
+
+        except Exception as e:
+            QMessageBox.critical(self, "Error", f"Failed to run NMDS:\n{str(e)}")
+            import traceback
             traceback.print_exc()
 
     def show_acc_log(self):
