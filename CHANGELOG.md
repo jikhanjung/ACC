@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.0.5] - 2026-02-26
+
 ### Added
 - NMDS (Non-metric Multidimensional Scaling) 패널 추가 (5번째 패널)
   - Local/Global 유사도 행렬 선택 콤보박스
@@ -17,6 +19,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Raup-Crick similarity index with Monte Carlo simulation (10,000 iterations default)
 - GUI input field for Raup-Crick iteration count (dynamic visibility)
 - Four standardized similarity indices: Jaccard, Ochiai, Raup-Crick, Simpson
+- NMDS 2D/3D 차원 선택 기능
+- 패널 Show/Hide 토글 (View 메뉴 + Panels 툴바)
+- ACC 포인트 스케일링 제거 및 NMDS Stress 품질 표시
 
 ### Changed
 - Similarity index selection reduced from 5 to 4 methods
