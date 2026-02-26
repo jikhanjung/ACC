@@ -3876,6 +3876,8 @@ class NMDSVisualizationWidget(QWidget):
         dim_label = "3D" if n_components == 3 else "2D"
         self.info_label.setText(f"{dim_label} | Stress: {stress:.4f} | {len(labels)} areas")
 
+        return stress
+
     def clear_display(self):
         """Clear the display"""
         self.figure.clear()
@@ -3942,6 +3944,13 @@ class NMDSPanel(ColumnPanel):
         controls_layout.addWidget(self.run_btn)
 
         controls_layout.addStretch()
+
+        # Stress value label
+        self.stress_label = QLabel("")
+        self.stress_label.setAlignment(Qt.AlignCenter)
+        self.stress_label.setStyleSheet("font-size: 11px; color: gray;")
+        controls_layout.addWidget(self.stress_label)
+
         self.content_layout.addLayout(controls_layout)
 
         # NMDS visualization widget
@@ -4528,7 +4537,22 @@ class MainWindow(QMainWindow):
 
             similarity_dict = dict_matrix_from_dataframe(df)
             n_components = 3 if self.nmds_panel.dim_combo.currentText() == "3D" else 2
-            self.nmds_panel.nmds_widget.run_nmds(similarity_dict, n_components=n_components)
+            stress = self.nmds_panel.nmds_widget.run_nmds(similarity_dict, n_components=n_components)
+
+            # Update stress label with quality interpretation
+            if stress is not None:
+                if stress < 0.05:
+                    quality, color = "Excellent", "#4CAF50"
+                elif stress < 0.1:
+                    quality, color = "Good", "#8BC34A"
+                elif stress < 0.2:
+                    quality, color = "Fair", "#FF9800"
+                else:
+                    quality, color = "Poor", "#F44336"
+                self.nmds_panel.stress_label.setText(f"Stress: {stress:.4f} ({quality})")
+                self.nmds_panel.stress_label.setStyleSheet(
+                    f"font-size: 11px; font-weight: bold; color: {color};"
+                )
 
         except Exception as e:
             QMessageBox.critical(self, "Error", f"Failed to run NMDS:\n{str(e)}")

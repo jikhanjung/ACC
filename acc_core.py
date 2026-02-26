@@ -219,18 +219,14 @@ def add_area_to_cluster(base, new_cluster, global_matrix):
         return base
     new_point = new_point[0]
 
-    # 지름/각도 보정
-    final_d = max(base["diameter"], new_cluster["diameter"])
-    scale = final_d / base["diameter"]
-    # 반지름이 바뀌면 기존 포인트도 스케일
-    base_r = final_d / 2.0
-    new_points = {}
-    for m, (x, y) in base["points"].items():
-        # 원점 기준 스케일
-        new_points[m] = (x * scale, y * scale)
+    # 기존 포인트는 원래 반지름 유지 (이미 배치된 원 위에 고정)
+    new_points = dict(base["points"])
 
-    # 어느 멤버 쪽에 붙일지 결정: 평균 유사도가 더 큰 쪽
-    # 아주 단순하게: base 멤버 중에서 new_point와 유사도가 가장 큰 멤버를 찾는다.
+    # 새 클러스터의 반지름 (새 멤버가 배치될 원)
+    new_r = new_cluster["diameter"] / 2.0
+    final_d = max(base["diameter"], new_cluster["diameter"])
+
+    # 어느 멤버 쪽에 붙일지 결정: base 멤버 중 new_point와 유사도가 가장 큰 멤버를 찾는다.
     best_m = None
     best_s = -1.0
     for m in base_members:
@@ -243,13 +239,12 @@ def add_area_to_cluster(base, new_cluster, global_matrix):
             best_s = s
             best_m = m
 
-    # 그 멤버의 각도를 알아내서 그 방향으로 조금 더 붙이자
-    # 각도는 arctan2로 구함
+    # 그 멤버의 각도를 알아내서 그 방향으로 새 점 배치
     bx, by = new_points[best_m]
     ang = math.degrees(math.atan2(by, bx))
 
-    # 새 점은 같은 반지름에서 그 각도 쪽
-    new_xy = pol2cart(base_r, ang)
+    # 새 점은 새 클러스터의 반지름 위에 배치
+    new_xy = pol2cart(new_r, ang)
     new_points[new_point] = new_xy
 
     base["points"] = new_points
@@ -277,22 +272,14 @@ def merge_two_clusters(base, new_cluster, global_matrix):
     # base + new의 멤버
     merged_members = base["members"] | new_cluster["members"]
 
-    # base 지름/각도와 new 지름/각도 중 큰/작은 것 선택
     final_d = max(base["diameter"], new_cluster["diameter"])
     final_theta = min(base["theta"], new_cluster["theta"])
-    base_r = final_d / 2.0
 
-    # base 포인트 스케일
-    new_points = {}
-    scale_base = final_d / base["diameter"]
-    for m, (x, y) in base["points"].items():
-        new_points[m] = (x * scale_base, y * scale_base)
+    # 기존 포인트는 원래 반지름 유지
+    new_points = dict(base["points"])
 
-    # new 포인트 스케일
-    scale_new = final_d / new_cluster["diameter"]
-    tmp_points = {}
-    for m, (x, y) in tmp["points"].items():
-        tmp_points[m] = (x * scale_new, y * scale_new)
+    # 새 클러스터 포인트도 자체 반지름 유지
+    tmp_points = dict(tmp["points"])
 
     # 어느 점끼리 가장 비슷한지 찾기
     best_pair = None
@@ -314,8 +301,6 @@ def merge_two_clusters(base, new_cluster, global_matrix):
         x1, y1 = new_points[m1]
         target_angle = math.degrees(math.atan2(y1, x1))
         x2, y2 = tmp_points[m2]
-        src_angle = math.degrees(math.atan2(x2, y2))  # 잘못된 순서 조심
-        # 위 줄은 atan2(y,x)여야 한다
         src_angle = math.degrees(math.atan2(y2, x2))
         rot = target_angle - src_angle
     else:
@@ -370,13 +355,16 @@ def build_acc_merged(local_dendro: DendroNode,
     # 2) 각 클러스터에 sim_global, d, theta 부여
     decorate_clusters(clusters, global_dendro, global_matrix, unit=unit)
 
-    # 3) 유사도 높은 순으로 정렬
+    # 3) 단일 멤버 클러스터 제외 (자체 기하 정보 없음)
+    clusters = [c for c in clusters if len(c["members"]) >= 2]
+
+    # 4) 유사도 높은 순으로 정렬
     clusters.sort(key=lambda c: c["sim_local"], reverse=True)
 
-    # 4) 첫 클러스터 배치
+    # 5) 첫 클러스터 배치
     base = place_first_cluster(clusters[0])
 
-    # 5) 나머지 클러스터 차례로 붙이기
+    # 6) 나머지 클러스터 차례로 붙이기
     for c in clusters[1:]:
         # "base 멤버보다 1개만 많으면" → add_area 케이스라고 간주
         if len(c["members"]) == len(base["members"]) + 1 and base["members"].issubset(c["members"]):
@@ -414,12 +402,15 @@ def build_acc_steps(local_dendro: DendroNode,
     # 2) 각 클러스터에 sim_global, d, theta 부여
     decorate_clusters(clusters, global_dendro, global_matrix, unit=unit)
 
-    # 3) 유사도 높은 순으로 정렬
+    # 3) 단일 멤버 클러스터 제외 (자체 기하 정보 없음)
+    clusters = [c for c in clusters if len(c["members"]) >= 2]
+
+    # 4) 유사도 높은 순으로 정렬
     clusters.sort(key=lambda c: c["sim_local"], reverse=True)
 
     steps = []
 
-    # 4) 첫 클러스터 배치 - Step 0
+    # 5) 첫 클러스터 배치 - Step 0
     base = place_first_cluster(clusters[0])
     steps.append({
         "step": 0,
@@ -430,7 +421,7 @@ def build_acc_steps(local_dendro: DendroNode,
         "highlighted_members": set(base["members"])
     })
 
-    # 5) 나머지 클러스터 차례로 붙이기
+    # 6) 나머지 클러스터 차례로 붙이기
     for idx, c in enumerate(clusters[1:], start=1):
         prev_members = set(base["members"])
 
