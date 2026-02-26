@@ -105,7 +105,7 @@ pip install -r requirements-dev.txt
 - matplotlib >= 3.9.0 (시각화)
 - scikit-learn >= 1.6.0 (NMDS 분석)
 
-자세한 설치 방법은 [설치 가이드](docs/installation.rst)를 참조하세요.
+자세한 설치 방법은 [설치 가이드](https://jikhanjung.github.io/ACC/installation.html)를 참조하세요.
 
 ---
 
@@ -276,6 +276,7 @@ pre-commit run ruff --all-files
 
 ### 사용자 문서
 
+- **[사용자 매뉴얼 (온라인)](https://jikhanjung.github.io/ACC/)** - Sphinx HTML 문서
 - **[사용자 매뉴얼 (Markdown)](doc/USER_MANUAL.md)** - 상세 사용 가이드
 - **[사용자 매뉴얼 (PDF)](doc/ACC_USER_MANUAL.pdf)** - PDF 버전
 
@@ -290,7 +291,9 @@ pre-commit run ruff --all-files
 ### 알고리즘 문서
 
 - **[알고리즘 개요](doc/ACC_Algorithm_Overview.md)** - 핵심 알고리즘 상세 설명
-- **[Sphinx 문서](docs/)** - HTML 문서 (사용법, FAQ 등)
+- **[FAQ](https://jikhanjung.github.io/ACC/faq.html)** - 자주 묻는 질문
+- **[데이터 형식](https://jikhanjung.github.io/ACC/data_format.html)** - CSV, .accdata 파일 형식
+- **[고급 기능](https://jikhanjung.github.io/ACC/advanced_features.html)** - NMDS, ACC2 옵션, Undo/Redo
 
 ### 문서 빌드
 
