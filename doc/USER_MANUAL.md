@@ -2,8 +2,8 @@
 
 **ACC (Area Affinity in Concentric Circles)** - 계층적 클러스터 관계 시각화 도구
 
-버전: 2.0
-최종 업데이트: 2025-11-15
+버전: 0.0.5
+최종 업데이트: 2026-02-26
 
 ---
 
@@ -44,11 +44,17 @@ ACC(Area Affinity in Concentric Circles)는 계층적 클러스터링 결과를 
 
 ### 1.2 주요 특징
 
+- **5패널 구성**: Data | Similarity | Dendrogram | ACC | NMDS 통합 인터페이스
+- **Raw Data 입력**: Presence/Absence Matrix를 통한 원시 데이터 직접 입력
+- **Similarity Index 4종**: Jaccard, Ochiai, Raup-Crick, Simpson 자동 계산
+- **NMDS 분석**: 2D/3D Non-metric Multidimensional Scaling 시각화
 - **이중 유사도 통합**: Local와 Global 유사도를 동시에 고려
 - **대화형 시각화**: 단계별 클러스터링 과정 재생 가능
 - **동심원 표현**: 클러스터 계층을 동심원으로 직관적 표현
 - **인터랙티브 조정**: Branch swap으로 레이아웃 최적화
-- **3단계 워크플로우**: 직관적인 데이터 입력 및 분석 프로세스
+- **Undo/Redo**: 모든 데이터 편집 작업의 실행 취소/다시 실행
+- **프로젝트 파일**: .accdata 형식으로 전체 프로젝트 저장/로드
+- **패널 토글**: View 메뉴에서 필요한 패널만 선택적으로 표시
 
 ### 1.3 사용 사례
 
@@ -91,8 +97,8 @@ ACC(Area Affinity in Concentric Circles)는 계층적 클러스터링 결과를 
 소스코드에서 실행하려면 Python 환경이 필요합니다:
 
 ```bash
-# Python 3.8 이상 필요
-pip install PyQt5 matplotlib scipy pandas numpy
+# Python 3.11 이상 필요
+pip install PyQt5 matplotlib scipy pandas numpy scikit-learn
 
 # 또는 requirements.txt 사용
 pip install -r requirements.txt
@@ -122,19 +128,23 @@ python acc_gui.py
 
 ### 3.2 화면 구성
 
-프로그램 실행 시 3열 레이아웃이 표시됩니다:
+프로그램 실행 시 5패널 레이아웃이 표시됩니다:
 
 ```
-┌─────────────────┬─────────────────┬─────────────────┐
-│  Similarity     │  Dendrograms    │  ACC            │
-│  Matrices       │                 │  Visualization  │
-│  (Left Panel)   │  (Center Panel) │  (Right Panel)  │
-└─────────────────┴─────────────────┴─────────────────┘
+┌──────────┬──────────┬──────────┬──────────┬──────────┐
+│  Data    │Similarity│Dendrogram│  ACC     │  NMDS    │
+│  Panel   │ Panel    │  Panel   │  Panel   │  Panel   │
+│(Raw Data)│(Matrices)│(Trees)   │(Circles) │(Scatter) │
+└──────────┴──────────┴──────────┴──────────┴──────────┘
 ```
 
-**왼쪽 패널**: Similarity Matrix 표시 및 편집
-**중앙 패널**: Dendrogram 시각화
-**오른쪽 패널**: ACC 동심원 시각화
+**Data 패널**: Raw Presence/Absence Matrix 입력 및 편집, 시트(Period) 관리
+**Similarity 패널**: Similarity Matrix 표시 및 편집, Similarity Index 선택
+**Dendrogram 패널**: 계층적 클러스터링 Dendrogram 시각화
+**ACC 패널**: ACC/ACC2 동심원 시각화
+**NMDS 패널**: 2D/3D Non-metric Multidimensional Scaling 시각화
+
+각 패널은 View 메뉴에서 개별적으로 표시/숨김 전환이 가능합니다.
 
 그림 1은 프로그램의 전체 레이아웃을 보여줍니다.
 
@@ -178,17 +188,90 @@ python acc_gui.py
 
 ## 4. 기본 사용법
 
+### 4.0 Raw Data 입력 (Presence/Absence Matrix)
+
+Data 패널에서 원시 데이터를 직접 입력할 수 있습니다.
+
+#### Presence/Absence Matrix란?
+
+각 지역(Area)에 특정 분류군(Taxon)이 존재하는지(1) 또는 부재하는지(0)를 나타내는 이진 행렬입니다.
+
+```
+        Taxa1  Taxa2  Taxa3  Taxa4
+Area_A    1      0      1      1
+Area_B    1      1      0      1
+Area_C    0      1      1      0
+```
+
+#### 데이터 입력 방법
+
+1. **Data 패널**에서 직접 입력:
+   - **Add Area**: 새로운 지역(행) 추가
+   - **Add Taxon**: 새로운 분류군(열) 추가
+   - 셀 클릭으로 0/1 토글
+   - 이름 더블클릭으로 Area/Taxon 이름 편집
+
+2. **CSV 가져오기**:
+   - **Import CSV** 버튼 클릭
+   - Presence/Absence 형식의 CSV 파일 선택
+   - 자동으로 테이블에 반영
+
+3. **시트(Period) 관리**:
+   - 여러 시기/기간의 데이터를 별도 시트(탭)로 관리
+   - **Add Sheet**: 새 시트 추가
+   - **Delete Sheet**: 현재 시트 삭제
+   - 각 시트는 동일한 Area 목록을 공유
+
+#### 데이터 편집
+
+- **선택 영역 채우기**: 여러 셀 선택 후 한꺼번에 0 또는 1로 변경
+- **행/열 재정렬**: Area 또는 Taxon 순서 드래그로 변경
+- **삭제**: 선택한 Area 또는 Taxon 삭제
+
+### 4.0-A 유사도 계산
+
+Raw Data 입력 후 Similarity Index를 선택하여 유사도 행렬을 자동 계산합니다.
+
+#### Similarity Index 종류
+
+| Index | 설명 | 공식 |
+|-------|------|------|
+| **Jaccard** | 공유 종수 / 전체 종수 | a / (a+b+c) |
+| **Ochiai** | 기하평균 기반 유사도 | a / sqrt((a+b)(a+c)) |
+| **Raup-Crick** | 확률적 유사도 (Monte Carlo) | 랜덤 귀무 모형 기반 |
+| **Simpson** | 작은 집합 기준 유사도 | a / min(a+b, a+c) |
+
+여기서 a = 공유 종수, b = A만의 종수, c = B만의 종수
+
+#### 사용법
+
+1. **Similarity 패널**의 상단에서 **Similarity Index** 드롭다운 선택
+2. Raup-Crick 선택 시 **Iterations** 값 설정 (기본: 10,000)
+3. **Calculate Similarity** 버튼 클릭
+4. Local/Global Similarity Matrix 자동 생성
+5. Dendrogram 자동 표시
+
 ### 4.1 전체 워크플로우
 
-ACC는 3단계 워크플로우로 구성됩니다:
+ACC는 두 가지 워크플로우를 지원합니다:
 
-#### **Step 1: Local Matrix 로드**
+#### **방법 A: Raw Data에서 시작** (권장)
 
-1. 왼쪽 패널 상단의 **"Local Similarity Matrix"** 섹션으로 이동
+1. **Data 패널**에서 Presence/Absence Matrix 입력
+2. **Similarity Index** 선택 후 **Calculate Similarity** 클릭
+3. Similarity Matrix와 Dendrogram 자동 생성 확인
+4. **ACC 패널**에서 **Generate ACC** 또는 **Generate ACC2** 클릭
+5. **NMDS 패널**에서 NMDS 분석 실행
+
+#### **방법 B: Similarity Matrix에서 시작** (기존 방식)
+
+**Step 1: Local Matrix 로드**
+
+1. Similarity 패널 상단의 **"Local Similarity Matrix"** 섹션으로 이동
 2. **[Load CSV]** 버튼 클릭
 3. Local similarity matrix CSV 파일 선택
 4. 매트릭스 데이터 확인
-5. **Dendrogram 자동 생성 및 표시** - 중앙 패널 상단에 완성된 dendrogram이 즉시 표시됨
+5. **Dendrogram 자동 생성 및 표시** - Dendrogram 패널 상단에 완성된 dendrogram이 즉시 표시됨
 
 **자동 처리**:
 - CSV 파일 검증 (대칭성, 대각선 1.0 체크)
@@ -197,21 +280,21 @@ ACC는 3단계 워크플로우로 구성됩니다:
 - 슬라이더 자동으로 마지막 단계로 이동
 - 완성된 dendrogram 즉시 표시
 
-#### **Step 2: Global Matrix 로드**
+**Step 2: Global Matrix 로드**
 
-1. 왼쪽 패널 하단의 **"Global Similarity Matrix"** 섹션으로 이동
+1. Similarity 패널 하단의 **"Global Similarity Matrix"** 섹션으로 이동
 2. **[Load CSV]** 버튼 클릭
 3. Global similarity matrix CSV 파일 선택
 4. 매트릭스 데이터 확인
-5. **Dendrogram 자동 생성 및 표시** - 중앙 패널 하단에 완성된 dendrogram이 즉시 표시됨
+5. **Dendrogram 자동 생성 및 표시** - Dendrogram 패널 하단에 완성된 dendrogram이 즉시 표시됨
 
 **중요**:
 - Local와 Global matrix는 동일한 라벨(지역/객체 이름)을 가져야 합니다.
 - 로드 후 완성된 dendrogram이 자동으로 표시됩니다. 단계별 과정을 보려면 슬라이더를 조작하세요.
 
-#### **Step 3: ACC 시각화 생성**
+**Step 3: ACC 시각화 생성**
 
-1. 오른쪽 패널로 이동
+1. ACC 패널로 이동
 2. **[Generate ACC Visualization]** 버튼 클릭
 3. ACC 알고리즘 실행
 4. **완성된 동심원이 자동으로 표시됨**
@@ -461,7 +544,107 @@ Dendrogram과 ACC 시각화를 이미지 파일로 저장할 수 있습니다.
 - 형식: SVG
 - 용도: Illustrator, Inkscape 등에서 편집
 
-### 5.3 로그 확인
+### 5.3 NMDS 분석
+
+NMDS (Non-metric Multidimensional Scaling) 패널에서 유사도 데이터의 다차원 척도 분석을 수행할 수 있습니다.
+
+#### NMDS란?
+
+NMDS는 유사도/비유사도 행렬을 저차원 공간(2D/3D)에 매핑하는 비모수적 서열화 기법입니다. ACC의 동심원 시각화와는 다른 관점에서 데이터를 분석할 수 있습니다.
+
+#### 사용법
+
+1. **NMDS 패널**에서 **Matrix** 선택: Local 또는 Global
+2. **Dimension** 선택: 2D 또는 3D
+3. **Run NMDS** 버튼 클릭
+4. 산점도 시각화 확인
+
+#### Stress 값 해석
+
+Stress는 원본 데이터와 저차원 표현 간의 적합도를 나타냅니다:
+
+| Stress 값 | 해석 |
+|-----------|------|
+| < 0.05 | Excellent |
+| 0.05 ~ 0.10 | Good |
+| 0.10 ~ 0.20 | Fair |
+| > 0.20 | Poor (차원 증가 필요) |
+
+#### 이미지 저장
+
+NMDS 차트에서 우클릭 → "Save Image As..." 선택하여 PNG/PDF/SVG로 저장 가능합니다.
+
+### 5.4 패널 관리
+
+View 메뉴를 통해 필요한 패널만 선택적으로 표시할 수 있습니다.
+
+#### 패널 토글
+
+- **View 메뉴**: 메뉴바에서 View 클릭 → 패널 이름 클릭으로 표시/숨김 전환
+- **툴바 버튼**: Panels 툴바에서 패널 이름 버튼 클릭
+
+#### 사용 가능한 패널
+
+| 패널 | 설명 |
+|------|------|
+| **Data** | Raw Presence/Absence Matrix 입력 |
+| **Similarity** | Similarity Matrix 표시/편집 |
+| **Dendrogram** | 계층적 클러스터링 시각화 |
+| **ACC** | ACC/ACC2 동심원 시각화 |
+| **NMDS** | NMDS 분석 시각화 |
+
+프로그램 실행 시 모든 패널이 기본적으로 표시됩니다.
+
+### 5.5 Undo/Redo
+
+Data 패널에서의 모든 편집 작업은 Undo/Redo를 지원합니다.
+
+#### 단축키
+
+| 단축키 | 기능 |
+|--------|------|
+| **Ctrl+Z** | Undo (실행 취소) |
+| **Ctrl+Y** | Redo (다시 실행) |
+
+#### 지원하는 작업
+
+- 셀 값 변경 (0↔1 토글)
+- 다중 셀 일괄 변경 (선택 영역 채우기)
+- Area 추가/삭제/이름 변경
+- Taxon 추가/삭제/이름 변경
+- 행/열 재정렬
+- 테이블 붙여넣기
+
+### 5.6 ACC2 옵션
+
+ACC2 시각화 생성 시 다음 옵션을 조정할 수 있습니다:
+
+#### Min Diameter
+
+- ACC2 동심원의 최소 지름 설정
+- 기본값: 1.0
+- 값이 작을수록 가장 안쪽 원이 작아짐
+
+#### Max Diameter
+
+- ACC2 동심원의 최대 지름 설정
+- 기본값: 2.0
+- 값이 클수록 가장 바깥쪽 원이 커짐
+
+#### ACC1 Style
+
+- 체크 시 영역(Area)을 첫 번째 병합 원 위에 배치 (ACC1 방식)
+- 미체크 시 가장 안쪽 원 위에 배치 (ACC2 기본 방식)
+
+#### Limit Angle
+
+- 체크 시 각도를 최대 각도 제한 내에 맞춤
+- **Max Angle**: 최대 각도 설정 (기본: 180°)
+- 값을 줄이면 클러스터가 더 좁은 범위에 배치됨
+
+옵션 변경 시 ACC2 시각화가 자동으로 갱신됩니다.
+
+### 5.7 로그 확인
 
 프로그램 동작 상세 정보는 개발자 모드에서 확인할 수 있습니다.
 
@@ -542,7 +725,39 @@ T,0.8,1.0
 
 ---
 
-### 6.2 데이터 준비 가이드
+### 6.2 .accdata 프로젝트 파일
+
+.accdata 파일은 ACC 프로젝트의 전체 데이터를 저장하는 JSON 기반 파일 형식입니다.
+
+#### 저장되는 데이터
+
+- 모든 시트(Period)의 Presence/Absence 데이터
+- Area 목록 및 Taxon 목록
+- 각 셀의 0/1 값
+
+#### 사용법
+
+- **저장**: File → Save (Ctrl+S) 또는 File → Save As
+- **로드**: File → Open (Ctrl+O)
+- **새 프로젝트**: File → New (Ctrl+N)
+
+### 6.3 Presence/Absence CSV 형식
+
+Raw Data를 CSV로 가져올 때의 파일 형식입니다:
+
+```csv
+,Taxa1,Taxa2,Taxa3,Taxa4
+Area_A,1,0,1,1
+Area_B,1,1,0,1
+Area_C,0,1,1,0
+```
+
+**요구사항**:
+- 첫 행: 분류군(Taxon) 이름
+- 첫 열: 지역(Area) 이름
+- 값: 0 (부재) 또는 1 (존재)
+
+### 6.4 데이터 준비 가이드
 
 #### Excel에서 CSV 생성
 
@@ -970,13 +1185,13 @@ Q,0.36,0.34,0.33,0.68,0.83,1.0
 
 ### B. 키보드 단축키
 
-현재 버전에는 키보드 단축키가 제한적입니다.
-
 | 단축키 | 기능 |
 |--------|------|
-| Ctrl+O | CSV 파일 열기 (개발 예정) |
-| Ctrl+S | 시각화 저장 (개발 예정) |
-| Space | Next step (개발 예정) |
+| Ctrl+N | 새 프로젝트 |
+| Ctrl+O | 프로젝트 파일(.accdata) 열기 |
+| Ctrl+S | 프로젝트 저장 |
+| Ctrl+Z | Undo (실행 취소) |
+| Ctrl+Y | Redo (다시 실행) |
 
 ### C. 추가 리소스
 
@@ -996,6 +1211,31 @@ Permission is hereby granted, free of charge, to any person obtaining a copy of 
 ---
 
 ## 변경 이력
+
+### Version 0.0.5 (2026-02-26)
+- **Raw Data 입력**:
+  - Presence/Absence Matrix 직접 입력 기능
+  - 다중 시트(Period) 관리
+  - CSV 가져오기 지원
+- **유사도 계산**:
+  - Similarity Index 4종 지원 (Jaccard, Ochiai, Raup-Crick, Simpson)
+  - Raup-Crick Monte Carlo iterations 설정
+- **NMDS 분석**:
+  - 2D/3D Non-metric Multidimensional Scaling 시각화
+  - Stress 값 표시
+  - Local/Global matrix 선택
+- **프로젝트 파일**:
+  - .accdata 형식 저장/로드
+  - File → New/Open/Save/Save As 메뉴
+- **Undo/Redo**:
+  - 모든 데이터 편집 작업 지원 (Ctrl+Z/Ctrl+Y)
+- **5패널 레이아웃**:
+  - Data | Similarity | Dendrogram | ACC | NMDS
+  - View 메뉴에서 패널 토글
+- **ACC2 옵션**:
+  - Min/Max Diameter 설정
+  - ACC1 Style 옵션
+  - Limit Angle 옵션
 
 ### Version 2.0 (2025-11-15)
 - **사용자 경험 개선**:

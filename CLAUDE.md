@@ -93,12 +93,17 @@ Modify the `if __name__ == "__main__":` block in `acc_core.py` to provide your o
 
 ## Potential Extensions
 
-The algorithm can be extended for:
-- Visualization using matplotlib or svgwrite
-- Export to CSV/JSON for external visualization tools
-- Performance optimization with NumPy for large datasets
-- Interactive visualizations for exploring cluster relationships
-- Application to phylogenetic, geographic, or ecological data
+Implemented in v0.0.5:
+- ~~Visualization using matplotlib or svgwrite~~ → Matplotlib-based GUI (acc_gui.py)
+- ~~Export to CSV/JSON for external visualization tools~~ → .accdata JSON project files, PNG/PDF/SVG export
+- ~~Performance optimization with NumPy for large datasets~~ → NumPy/SciPy integration
+- ~~Interactive visualizations for exploring cluster relationships~~ → ACC2 interactive features, NMDS 2D/3D
+- ~~Application to phylogenetic, geographic, or ecological data~~ → Raw Data (Presence/Absence Matrix) input, 4 Similarity Indices
+
+Future extensions:
+- Animation/video export of clustering steps
+- Batch processing for multiple datasets
+- Additional clustering methods beyond UPGMA
 
 ## Documentation
 

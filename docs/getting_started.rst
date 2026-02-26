@@ -51,6 +51,20 @@
 기본 워크플로우 이해하기
 -------------------------
 
+ACC는 두 가지 워크플로우를 지원합니다:
+
+방법 A: Raw Data에서 시작 (권장)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+1. **Data 패널**에서 Presence/Absence Matrix 입력 (또는 CSV 가져오기)
+2. **Similarity Index** 선택 (Jaccard, Ochiai, Raup-Crick, Simpson)
+3. **Calculate Similarity** 클릭 → Similarity Matrix 자동 생성
+4. **ACC 패널**에서 **Generate ACC** 또는 **Generate ACC2** 클릭
+5. **NMDS 패널**에서 2D/3D 시각화 확인
+
+방법 B: Similarity Matrix에서 시작 (기존 방식)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
 ACC는 3단계 워크플로우로 구성됩니다:
 
 Step 1: Local Matrix 로드

@@ -40,8 +40,8 @@
 
 .. code-block:: bash
 
-   # Python 3.8 이상 필요
-   pip install PyQt5 matplotlib scipy pandas numpy
+   # Python 3.11 이상 필요
+   pip install PyQt5 matplotlib scipy pandas numpy scikit-learn
 
    # 또는 requirements.txt 사용
    pip install -r requirements.txt
@@ -75,21 +75,27 @@
 화면 구성
 ----------
 
-프로그램 실행 시 3열 레이아웃이 표시됩니다:
+프로그램 실행 시 5패널 레이아웃이 표시됩니다:
 
 .. code-block:: text
 
-   ┌─────────────────┬─────────────────┬─────────────────┐
-   │  Similarity     │  Dendrograms    │  ACC            │
-   │  Matrices       │                 │  Visualization  │
-   │  (Left Panel)   │  (Center Panel) │  (Right Panel)  │
-   └─────────────────┴─────────────────┴─────────────────┘
+   ┌──────────┬──────────┬──────────┬──────────┬──────────┐
+   │  Data    │Similarity│Dendrogram│  ACC     │  NMDS    │
+   │  Panel   │ Panel    │  Panel   │  Panel   │  Panel   │
+   │(Raw Data)│(Matrices)│(Trees)   │(Circles) │(Scatter) │
+   └──────────┴──────────┴──────────┴──────────┴──────────┘
 
-**왼쪽 패널**: Similarity Matrix 표시 및 편집
+**Data 패널**: Raw Presence/Absence Matrix 입력 및 편집
 
-**중앙 패널**: Dendrogram 시각화
+**Similarity 패널**: Similarity Matrix 표시 및 편집
 
-**오른쪽 패널**: ACC 동심원 시각화
+**Dendrogram 패널**: 계층적 클러스터링 Dendrogram 시각화
+
+**ACC 패널**: ACC/ACC2 동심원 시각화
+
+**NMDS 패널**: 2D/3D Non-metric Multidimensional Scaling 시각화
+
+각 패널은 View 메뉴에서 개별적으로 표시/숨김 전환이 가능합니다.
 
 .. figure:: images/01_main_window.png
    :alt: 메인 화면

@@ -1,6 +1,53 @@
 기본 사용법
 ===========
 
+Raw Data 입력
+--------------
+
+Data 패널에서 Presence/Absence Matrix를 직접 입력할 수 있습니다.
+
+Presence/Absence Matrix란?
+~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+각 지역(Area)에 특정 분류군(Taxon)이 존재하는지(1) 또는 부재하는지(0)를 나타내는 이진 행렬입니다.
+
+.. code-block:: text
+
+           Taxa1  Taxa2  Taxa3  Taxa4
+   Area_A    1      0      1      1
+   Area_B    1      1      0      1
+   Area_C    0      1      1      0
+
+데이터 입력 방법
+~~~~~~~~~~~~~~~~
+
+1. **직접 입력**: Add Area/Add Taxon으로 행/열 추가, 셀 클릭으로 0/1 토글
+2. **CSV 가져오기**: Import CSV 버튼으로 Presence/Absence CSV 파일 로드
+3. **시트 관리**: 여러 시기의 데이터를 별도 시트(탭)로 관리
+
+유사도 계산
+-----------
+
+Raw Data 입력 후 Similarity Index를 선택하여 유사도 행렬을 자동 계산합니다.
+
+Similarity Index 종류
+~~~~~~~~~~~~~~~~~~~~~
+
+* **Jaccard**: 공유 종수 / 전체 종수 — ``a / (a+b+c)``
+* **Ochiai**: 기하평균 기반 유사도 — ``a / sqrt((a+b)(a+c))``
+* **Raup-Crick**: 확률적 유사도 (Monte Carlo 기반)
+* **Simpson**: 작은 집합 기준 유사도 — ``a / min(a+b, a+c)``
+
+여기서 a = 공유 종수, b = A만의 종수, c = B만의 종수
+
+사용법
+~~~~~~
+
+1. Similarity 패널의 상단에서 Similarity Index 드롭다운 선택
+2. Raup-Crick 선택 시 Iterations 값 설정 (기본: 10,000)
+3. **Calculate Similarity** 버튼 클릭
+4. Local/Global Similarity Matrix 자동 생성
+
 Matrix 편집
 -----------
 

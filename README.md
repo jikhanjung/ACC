@@ -34,10 +34,16 @@ ACC는 두 종류의 덴드로그램(하위 local, 포괄 global)에서 유사�
 - **결정론적 처리**: 동일 입력 → 동일 출력 보장
 
 ### GUI 애플리케이션
-- **PyQt5 기반**: 직관적인 3단계 워크플로우
+- **PyQt5 기반**: 직관적인 5패널 워크플로우 (Data | Similarity | Dendrogram | ACC | NMDS)
+- **Raw Data 입력**: Presence/Absence Matrix로 원시 데이터 직접 입력
+- **Similarity Index 4종**: Jaccard, Ochiai, Raup-Crick, Simpson 자동 계산
+- **NMDS 시각화**: 2D/3D Non-metric Multidimensional Scaling
 - **CSV 입력**: Similarity matrix를 CSV 파일로 간편하게 로드
 - **실시간 시각화**: Matplotlib 기반 인터랙티브 차트
 - **자동 덴드로그램**: Scipy hierarchical clustering 자동 생성
+- **Undo/Redo**: 모든 데이터 편집에 대한 실행 취소/다시 실행
+- **프로젝트 파일**: .accdata 형식으로 프로젝트 저장/로드
+- **패널 토글**: View 메뉴에서 필요한 패널만 선택적 표시
 - **이미지 저장**: PNG/SVG 형식 고해상도 내보내기
 
 ### 개발자 도구
@@ -97,6 +103,7 @@ pip install -r requirements-dev.txt
 - scipy >= 1.11.0 (클러스터링)
 - pandas >= 2.0.0 (데이터 처리)
 - matplotlib >= 3.9.0 (시각화)
+- scikit-learn >= 1.6.0 (NMDS 분석)
 
 자세한 설치 방법은 [설치 가이드](docs/installation.rst)를 참조하세요.
 
@@ -110,25 +117,24 @@ pip install -r requirements-dev.txt
 python acc_gui.py
 ```
 
-#### 3단계 워크플로우
+#### 워크플로우
 
-**Step 1: Local Matrix 로드**
+**방법 A: Raw Data에서 시작** (권장)
+1. **Data 패널**에서 Presence/Absence Matrix 입력 (또는 CSV 가져오기)
+2. Similarity Index 선택 (Jaccard, Ochiai, Raup-Crick, Simpson)
+3. **Calculate Similarity** 클릭 → Similarity Matrix 자동 생성
+4. Dendrogram 자동 생성 확인
+5. **Generate ACC** 또는 **Generate ACC2** 클릭
+6. **NMDS 패널**에서 2D/3D 시각화 확인
+
+**방법 B: Similarity Matrix에서 시작** (기존 방식)
 1. "Local Similarity Matrix" 섹션에서 **Load CSV** 클릭
-2. `data/sample_local.csv` 파일 선택
-3. Matrix 데이터 확인
-4. **Dendrogram 자동 생성** - 계층적 클러스터링 구조 확인
+2. "Global Similarity Matrix" 섹션에서 **Load CSV** 클릭
+3. **Generate ACC Visualization** 버튼 클릭
 
-**Step 2: Global Matrix 로드**
-1. "Global Similarity Matrix" 섹션에서 **Load CSV** 클릭
-2. `data/sample_global.csv` 파일 선택
-3. Matrix 데이터 확인
-4. **Dendrogram 자동 생성** - 대안적 유사도 구조 확인
-
-**Step 3: ACC 시각화 생성**
-1. **Generate ACC Visualization** 버튼 클릭
-2. Concentric circles 시각화 확인
-3. 각 멤버의 위치와 클러스터 정보 확인
-4. 이미지 저장 (우클릭 메뉴)
+**프로젝트 저장/로드**:
+- File → Save로 .accdata 파일에 프로젝트 저장
+- File → Open으로 기존 프로젝트 로드
 
 ### Python API 사용
 
@@ -332,8 +338,8 @@ python build.py
 **릴리스 프로세스**:
 ```bash
 # 버전 태그 생성
-git tag v0.2.0
-git push origin v0.2.0
+git tag v0.0.5
+git push origin v0.0.5
 
 # → GitHub Actions가 자동으로:
 #    1. 테스트 실행
@@ -399,7 +405,7 @@ in the Software without restriction...
 
 ## 📊 프로젝트 상태
 
-- **버전**: 0.0.3
+- **버전**: 0.0.5
 - **Python**: 3.11, 3.12
 - **테스트**: [![Tests](https://github.com/jikhanjung/ACC/workflows/Tests/badge.svg)](https://github.com/jikhanjung/ACC/actions)
 - **커버리지**: [![codecov](https://codecov.io/gh/jikhanjung/ACC/branch/main/graph/badge.svg)](https://codecov.io/gh/jikhanjung/ACC)

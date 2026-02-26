@@ -131,6 +131,44 @@ CSV 파일 로드 시 자동으로 다음 사항을 검증합니다:
    - Matrix must be symmetric (matrix[i,j] = matrix[j,i])
    - All values should be between 0.0 and 1.0
 
+.accdata 프로젝트 파일
+-----------------------
+
+.accdata 파일은 ACC 프로젝트의 전체 데이터를 저장하는 JSON 기반 파일 형식입니다.
+
+저장되는 데이터
+~~~~~~~~~~~~~~~
+
+* 모든 시트(Period)의 Presence/Absence 데이터
+* Area 목록 및 Taxon 목록
+* 각 셀의 0/1 값
+
+사용법
+~~~~~~
+
+* **저장**: File → Save (Ctrl+S) 또는 File → Save As
+* **로드**: File → Open (Ctrl+O)
+* **새 프로젝트**: File → New (Ctrl+N)
+
+Presence/Absence CSV 형식
+--------------------------
+
+Raw Data를 CSV로 가져올 때의 파일 형식입니다:
+
+.. code-block:: text
+
+   ,Taxa1,Taxa2,Taxa3,Taxa4
+   Area_A,1,0,1,1
+   Area_B,1,1,0,1
+   Area_C,0,1,1,0
+
+필수 조건
+~~~~~~~~~
+
+* 첫 행: 분류군(Taxon) 이름
+* 첫 열: 지역(Area) 이름
+* 값: 0 (부재) 또는 1 (존재)
+
 다음 단계
 ----------
 

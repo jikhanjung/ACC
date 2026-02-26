@@ -3,9 +3,9 @@ ACC 사용자 매뉴얼
 
 **ACC (Area Affinity in Concentric Circles)** - 계층적 클러스터 관계 시각화 도구
 
-버전: 2.0
+버전: 0.0.5
 
-최종 업데이트: 2025-11-15
+최종 업데이트: 2026-02-26
 
 환영합니다
 ----------
@@ -16,11 +16,17 @@ ACC는 계층적 클러스터링 결과를 **동심원 기반 원형 다이어�
 주요 특징
 ----------
 
+* **5패널 통합 인터페이스**: Data | Similarity | Dendrogram | ACC | NMDS
+* **Raw Data 입력**: Presence/Absence Matrix를 통한 원시 데이터 직접 입력
+* **Similarity Index 4종**: Jaccard, Ochiai, Raup-Crick, Simpson 자동 계산
+* **NMDS 분석**: 2D/3D Non-metric Multidimensional Scaling 시각화
 * **이중 유사도 통합**: Local와 Global 유사도를 동시에 고려
 * **대화형 시각화**: 단계별 클러스터링 과정 재생 가능
 * **동심원 표현**: 클러스터 계층을 동심원으로 직관적 표현
 * **인터랙티브 조정**: Branch swap으로 레이아웃 최적화
-* **3단계 워크플로우**: 직관적인 데이터 입력 및 분석 프로세스
+* **Undo/Redo**: 모든 데이터 편집 작업의 실행 취소/다시 실행 (Ctrl+Z/Ctrl+Y)
+* **프로젝트 파일**: .accdata 형식으로 전체 프로젝트 저장/로드
+* **패널 토글**: View 메뉴에서 필요한 패널만 선택적 표시
 
 사용 사례
 ---------
@@ -59,6 +65,15 @@ ACC는 계층적 클러스터링 결과를 **동심원 기반 원형 다이어�
 기본 사용법
 ~~~~~~~~~~~
 
+**방법 A: Raw Data에서 시작** (권장)
+
+1. **Data 패널**: Presence/Absence Matrix 입력 (또는 CSV 가져오기)
+2. **Similarity Index 선택**: Jaccard, Ochiai, Raup-Crick, Simpson 중 선택
+3. **Calculate Similarity**: 유사도 행렬 자동 계산
+4. **ACC/NMDS 생성**: 시각화 버튼 클릭
+
+**방법 B: Similarity Matrix에서 시작**
+
 1. **Local Matrix 로드**: CSV 파일 선택 → Dendrogram 자동 표시
 2. **Global Matrix 로드**: CSV 파일 선택 → Dendrogram 자동 표시
 3. **ACC 생성**: "Generate ACC Visualization" 버튼 클릭 → 동심원 자동 표시
@@ -68,7 +83,7 @@ ACC는 계층적 클러스터링 결과를 **동심원 기반 원형 다이어�
 기술 스택
 ---------
 
-* **언어**: Python 3.8+
+* **언어**: Python 3.11+
 * **GUI**: PyQt5
 * **핵심 라이브러리**:
 
@@ -76,6 +91,7 @@ ACC는 계층적 클러스터링 결과를 **동심원 기반 원형 다이어�
   * 데이터 처리: Pandas
   * 시각화: Matplotlib
   * 클러스터링: SciPy hierarchy
+  * NMDS 분석: scikit-learn
 
 라이선스
 --------
