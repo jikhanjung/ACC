@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- Magic numbers replaced with named constants: `THETA_MAX_DEGREES` (acc_core.py, acc_core_new.py), `DEFAULT_SIMILARITY` (acc_core_new.py)
+- All `print()` statements in acc_gui.py converted to `logging` module calls
+- Bare `except:` clause replaced with `except (ValueError, AttributeError):` in acc_gui.py
+- `plot_acc2()` method (356 lines) refactored into 8 focused private methods
+- `import copy` moved from inline to module-level import in acc_gui.py
+- `E722` rule removed from ruff ignore list (no longer needed)
+
+### Added
+- Module-level `logger` in acc_gui.py with `logging.basicConfig()` in `main()`
+- GUI test suite: `tests/gui/test_acc_gui.py` (13 tests covering utilities, widget smoke tests, code quality checks)
+- `QApplication` session fixture in `tests/conftest.py` for GUI tests
+
 ## [0.0.5] - 2026-02-26
 
 ### Added

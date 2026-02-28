@@ -2,13 +2,29 @@
 pytest configuration and fixtures for ACC tests
 """
 
-import pytest
-import pandas as pd
-from pathlib import Path
+import os
 import sys
+from pathlib import Path
+
+import pandas as pd
+import pytest
 
 # Add parent directory to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent))
+
+# Ensure offscreen rendering for CI
+os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+
+
+@pytest.fixture(scope="session")
+def qapp():
+    """Shared QApplication instance for all GUI tests"""
+    from PyQt5.QtWidgets import QApplication
+
+    app = QApplication.instance()
+    if app is None:
+        app = QApplication([])
+    return app
 
 
 @pytest.fixture
@@ -56,31 +72,24 @@ def sample_global_matrix(sample_global_df):
 @pytest.fixture
 def simple_abc_local_matrix():
     """간단한 3-영역 local matrix"""
-    return {
-        "A": {"B": 0.9, "C": 0.5},
-        "B": {"A": 0.9, "C": 0.5},
-        "C": {"A": 0.5, "B": 0.5}
-    }
+    return {"A": {"B": 0.9, "C": 0.5}, "B": {"A": 0.9, "C": 0.5}, "C": {"A": 0.5, "B": 0.5}}
 
 
 @pytest.fixture
 def simple_abc_global_matrix():
     """간단한 3-영역 global matrix"""
-    return {
-        "A": {"B": 0.8, "C": 0.4},
-        "B": {"A": 0.8, "C": 0.4},
-        "C": {"A": 0.4, "B": 0.4}
-    }
+    return {"A": {"B": 0.8, "C": 0.4}, "B": {"A": 0.8, "C": 0.4}, "C": {"A": 0.4, "B": 0.4}}
 
 
 @pytest.fixture
 def invalid_asymmetric_matrix():
     """비대칭 matrix (검증 실패용)"""
     import numpy as np
+
     arr = np.array([
         [1.0, 0.9, 0.8],
         [0.8, 1.0, 0.7],  # 비대칭: [0,1]=0.9 but [1,0]=0.8
-        [0.8, 0.7, 1.0]
+        [0.8, 0.7, 1.0],
     ])
     return arr
 
@@ -89,10 +98,11 @@ def invalid_asymmetric_matrix():
 def invalid_diagonal_matrix():
     """대각선 != 1.0 matrix (검증 실패용)"""
     import numpy as np
+
     arr = np.array([
         [0.9, 0.8, 0.7],  # 대각선이 0.9
         [0.8, 1.0, 0.6],
-        [0.7, 0.6, 1.0]
+        [0.7, 0.6, 1.0],
     ])
     return arr
 
@@ -101,9 +111,10 @@ def invalid_diagonal_matrix():
 def invalid_range_matrix():
     """범위 초과 matrix (검증 실패용)"""
     import numpy as np
+
     arr = np.array([
         [1.0, 1.5, 0.8],  # 1.5 > 1.0
         [1.5, 1.0, 0.6],
-        [0.8, 0.6, 1.0]
+        [0.8, 0.6, 1.0],
     ])
     return arr

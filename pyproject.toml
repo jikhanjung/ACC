@@ -94,7 +94,6 @@ ignore = [
     "PT011",  # pytest.raises too broad
     "SIM108", # Use ternary operator (sometimes less readable)
     "E741",   # Ambiguous variable name
-    "E722",   # Do not use bare except
     "F841",   # Local variable assigned but never used
     "C408",   # Unnecessary dict() call
     "SIM102", # Use single if instead of nested if

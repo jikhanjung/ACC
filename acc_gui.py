@@ -10,6 +10,7 @@ Four-column layout with step-by-step clustering visualization:
 """
 
 # Import matplotlib components with proper backend setup
+import copy
 import json
 import math
 import os
@@ -44,7 +45,6 @@ from PyQt5.QtWidgets import (
     QTableWidgetItem,
     QTabWidget,
     QTextEdit,
-    QToolBar,
     QUndoCommand,
     QUndoStack,
     QVBoxLayout,
@@ -73,6 +73,8 @@ from acc_utils import (
     validate_similarity_matrix,
 )
 from clustering_steps import ClusteringStepManager
+
+logger = logging.getLogger(__name__)
 
 
 def compass_to_cart(r, angle_deg):
@@ -691,9 +693,7 @@ class StepMatrixWidget(QWidget):
 
             except Exception as e:
                 QMessageBox.critical(self, "Error Loading File", f"Failed to load CSV file:\n{str(e)}")
-                import traceback
-
-                traceback.print_exc()
+                logger.debug("CSV load traceback", exc_info=True)
 
     def on_step_changed(self, value):
         """Handle slider value change"""
@@ -1304,10 +1304,8 @@ class StepDendrogramWidget(QWidget):
                 ax.set_xlim(0, 1)
                 ax.set_ylim(0, 1)
                 ax.axis("off")
-                print(f"Dendrogram error: {e}")
-                import traceback
-
-                traceback.print_exc()
+                logger.error("Dendrogram error: %s", e)
+                logger.debug("Dendrogram traceback", exc_info=True)
 
         self.figure.tight_layout()
         self.canvas.draw()
@@ -1747,8 +1745,6 @@ class ACCVisualizationWidget(QWidget):
         Strategy: For each swap, exchange the angular positions of two child branches
         by calculating the offset between them and their descendants.
         """
-        import copy
-
         data = copy.deepcopy(acc2_data)
         positions = data["positions"]
         levels = data["levels"]
@@ -1827,56 +1823,16 @@ class ACCVisualizationWidget(QWidget):
 
     def plot_acc2(self, acc2_data, reset_swaps=True, acc1_style=False):
         """Plot ACC2 visualization with dendrogram on concentric circles"""
-        import copy
-
-        # Apply ACC1 style to the data first (before storing)
         if acc1_style:
-            acc2_data = copy.deepcopy(acc2_data)
+            acc2_data = self._apply_acc1_style(acc2_data)
 
-            # For each area, find its first merge level and place it on that circle
-            area_to_first_merge_radius = {}
-
-            for level_idx, level in enumerate(acc2_data["levels"]):
-                cluster1 = level["cluster1"]
-                cluster2 = level["cluster2"]
-                merge_radius = level["radius"]
-
-                # Get all areas in cluster1 and cluster2
-                def get_areas(cluster_id):
-                    # If it's already an area, return it
-                    if cluster_id in acc2_data["positions"]:
-                        return [cluster_id]
-                    # Otherwise, recursively find areas in this cluster
-                    areas = []
-                    for lvl in acc2_data["levels"]:
-                        if f"[{lvl['cluster1']}, {lvl['cluster2']}]" == cluster_id:
-                            areas.extend(get_areas(lvl["cluster1"]))
-                            areas.extend(get_areas(lvl["cluster2"]))
-                            break
-                    return areas
-
-                areas1 = get_areas(cluster1)
-                areas2 = get_areas(cluster2)
-
-                # For each area, if not yet assigned, assign to this merge radius
-                for area in areas1 + areas2:
-                    if area not in area_to_first_merge_radius:
-                        area_to_first_merge_radius[area] = merge_radius
-
-            # Update position radii
-            for area, merge_radius in area_to_first_merge_radius.items():
-                if area in acc2_data["positions"]:
-                    acc2_data["positions"][area]["radius"] = merge_radius
-
-        # Store ACC2 data for interactive manipulation (with ACC1 style already applied if requested)
+        # Store ACC2 data for interactive manipulation
         self.acc2_data = acc2_data
-
-        # Store acc1_style setting
         self.acc1_style = acc1_style
 
         # Initialize or keep swap state
         if reset_swaps or not hasattr(self, "acc2_swaps"):
-            self.acc2_swaps = {}  # {level_idx: True/False}
+            self.acc2_swaps = {}
 
         # Apply swaps to create modified data
         working_data = self.apply_acc2_swaps(acc2_data, self.acc2_swaps)
@@ -1894,16 +1850,60 @@ class ACCVisualizationWidget(QWidget):
         lines = working_data["lines"]
         levels = working_data["levels"]
 
-        # Create radius -> global_sim mapping
-        radius_to_sim = {}
-        for level in levels:
-            radius_to_sim[level["radius"]] = level["global_sim"]
+        radius_to_sim = {level["radius"]: level["global_sim"] for level in levels}
 
-        # Step 1: Draw all concentric circles
+        self._draw_concentric_circles(ax, circles, radius_to_sim)
+        self._draw_arc_lines(ax, lines)
+        self._draw_radial_lines(ax, lines, circles)
+        self._draw_area_points(ax, circles, positions)
+        merge_point_data = self._draw_merge_points(ax, positions, merge_points, levels)
+        lim = self._setup_plot_decorations(ax, circles, positions, levels)
+        self._setup_interactivity(ax, merge_point_data, levels, lim)
+
+        self.figure.tight_layout()
+        self.canvas.draw()
+        self.info_label.setText(f"✓ ACC2 Generated: {len(positions)} areas, {len(circles)} circles")
+        self.info_label.setStyleSheet("color: green; font-size: 10px;")
+
+        # Hide step controls for ACC2
+        self.step_controls.setVisible(False)
+
+    def _apply_acc1_style(self, acc2_data):
+        """Apply ACC1 style: place areas on their first merge circle instead of innermost"""
+        acc2_data = copy.deepcopy(acc2_data)
+        area_to_first_merge_radius = {}
+
+        for level_idx, level in enumerate(acc2_data["levels"]):
+            cluster1 = level["cluster1"]
+            cluster2 = level["cluster2"]
+            merge_radius = level["radius"]
+
+            def get_areas(cluster_id):
+                if cluster_id in acc2_data["positions"]:
+                    return [cluster_id]
+                areas = []
+                for lvl in acc2_data["levels"]:
+                    if f"[{lvl['cluster1']}, {lvl['cluster2']}]" == cluster_id:
+                        areas.extend(get_areas(lvl["cluster1"]))
+                        areas.extend(get_areas(lvl["cluster2"]))
+                        break
+                return areas
+
+            for area in get_areas(cluster1) + get_areas(cluster2):
+                if area not in area_to_first_merge_radius:
+                    area_to_first_merge_radius[area] = merge_radius
+
+        for area, merge_radius in area_to_first_merge_radius.items():
+            if area in acc2_data["positions"]:
+                acc2_data["positions"][area]["radius"] = merge_radius
+
+        return acc2_data
+
+    def _draw_concentric_circles(self, ax, circles, radius_to_sim):
+        """Draw all concentric circles with color-coded similarity labels"""
         circle_colors = plt.cm.rainbow(np.linspace(0, 1, len(circles)))
 
         for idx, radius in enumerate(circles):
-            # Label with global similarity instead of radius
             if radius == 0.5:
                 label = "Areas"
             else:
@@ -1922,23 +1922,18 @@ class ACCVisualizationWidget(QWidget):
             )
             ax.add_patch(circle)
 
-        # Step 2: Draw connection lines
-        # First draw arcs, then radial lines (so radial lines are on top)
-
-        # Draw arcs
+    def _draw_arc_lines(self, ax, lines):
+        """Draw arc connection lines between merge points"""
         for line in lines:
             if line["type"] == "arc":
                 radius = line["radius"]
                 angle_start = line["angle_start"]
                 angle_end = line["angle_end"]
 
-                # Convert from compass convention (0° = north, positive = clockwise)
-                # to matplotlib convention (0° = east, positive = counter-clockwise)
-                # Formula: mpl_angle = 90 - compass_angle
+                # Convert from compass to matplotlib convention
                 mpl_angle_start = 90 - angle_start
                 mpl_angle_end = 90 - angle_end
 
-                # Ensure proper arc direction (smaller to larger in matplotlib convention)
                 if mpl_angle_start > mpl_angle_end:
                     mpl_angle_start, mpl_angle_end = mpl_angle_end, mpl_angle_start
 
@@ -1955,8 +1950,8 @@ class ACCVisualizationWidget(QWidget):
                 )
                 ax.add_patch(arc)
 
-        # Draw radial lines
-        # Get innermost circle radius (minimum radius in circles)
+    def _draw_radial_lines(self, ax, lines, circles):
+        """Draw radial connection lines between circles"""
         innermost_radius = min(circles) if circles else 0.5
 
         for line in lines:
@@ -1968,39 +1963,33 @@ class ACCVisualizationWidget(QWidget):
                 if self.acc1_style and abs(r1 - innermost_radius) < 0.001:
                     continue
 
-                # Convert to cartesian using compass convention
                 x1, y1 = compass_to_cart(r1, angle)
                 x2, y2 = compass_to_cart(r2, angle)
-
                 ax.plot([x1, x2], [y1, y2], "k-", linewidth=2, alpha=0.8)
 
-        # Step 3: Draw areas at r=0.5
-        # Calculate label offset based on max radius for proper scaling
+    def _draw_area_points(self, ax, circles, positions):
+        """Draw area points and labels"""
         max_radius = max(circles) if circles else 1.0
-        label_offset = max_radius * 0.08  # Scale offset proportionally to chart size
+        label_offset = max_radius * 0.08
 
         for area, pos in positions.items():
             angle = pos["angle"]
             radius = pos["radius"]
 
-            # Use stored x, y for area position (more accurate than recalculating)
-            # Scale to the actual radius in case it was modified
             original_r = math.sqrt(pos["x"] ** 2 + pos["y"] ** 2) if (pos["x"] ** 2 + pos["y"] ** 2) > 0 else 1
             scale = radius / original_r if original_r > 0 else 1
             x, y = pos["x"] * scale, pos["y"] * scale
 
-            # Draw area point
             ax.scatter(x, y, c="darkblue", s=200, zorder=10, edgecolors="black", linewidth=2)
 
-            # Label area with dynamic offset based on max radius
             label_r = radius - label_offset
             label_x, label_y = compass_to_cart(label_r, angle)
             ax.text(label_x, label_y, area, fontsize=14, ha="center", va="center", fontweight="bold", color="darkblue")
 
-        # Step 4: Draw merge points (small red dots) and store their info
-        merge_point_data = []  # Store (x, y, merge_angle, subtended_angle, local_sim, cluster_id)
+    def _draw_merge_points(self, ax, positions, merge_points, levels):
+        """Draw merge points and return their data for interactive hover/click"""
+        merge_point_data = []
 
-        # Create mapping from cluster_id to local similarity and children
         cluster_to_subsim = {}
         cluster_to_children = {}
         for level in levels:
@@ -2011,19 +2000,14 @@ class ACCVisualizationWidget(QWidget):
         for cluster_id, mp in merge_points.items():
             merge_angle = mp["angle"]
             radius = mp["radius"]
-
-            # Convert to cartesian using compass convention
             x, y = compass_to_cart(radius, merge_angle)
 
-            # Draw merge point
             ax.scatter(x, y, c="red", s=50, zorder=9, edgecolors="black", linewidth=1, alpha=0.6)
 
-            # Calculate subtended angle (angle between two children)
             subtended_angle = 0.0
             if cluster_id in cluster_to_children:
                 child1_id, child2_id = cluster_to_children[cluster_id]
 
-                # Get child angles
                 def get_child_angle(child_id):
                     if child_id in positions:
                         return positions[child_id]["angle"]
@@ -2035,51 +2019,50 @@ class ACCVisualizationWidget(QWidget):
                 child2_angle = get_child_angle(child2_id)
 
                 if child1_angle is not None and child2_angle is not None:
-                    # Calculate absolute difference
                     subtended_angle = abs(child2_angle - child1_angle)
-                    # Handle wrap-around (e.g., 350° to 10° should be 20°, not 340°)
                     if subtended_angle > 180:
                         subtended_angle = 360 - subtended_angle
 
-            # Store merge point data for hover
             local_sim = cluster_to_subsim.get(cluster_id, 0.0)
             merge_point_data.append((x, y, merge_angle, subtended_angle, local_sim, cluster_id))
 
-        # Set plot limits
+        return merge_point_data
+
+    def _setup_plot_decorations(self, ax, circles, positions, levels):
+        """Set plot limits, title, info text, and legend. Returns lim for interactivity threshold."""
         max_radius = max(circles)
         lim = max_radius * 1.2
         ax.set_xlim(-lim, lim)
         ax.set_ylim(-lim, lim)
 
-        # Add title
         ax.set_title("ACC2: Dendrogram on Concentric Circles", fontsize=12, fontweight="bold")
 
-        # Add info text
         info_lines = [
             f"Total areas: {len(positions)}",
             f"Merge levels: {len(levels)}",
             f"Circles: {len(circles)}",
             f"All areas at r={circles[0]:.1f}",
         ]
-        info_text = "\n".join(info_lines)
         ax.text(
             0.02,
             0.98,
-            info_text,
+            "\n".join(info_lines),
             transform=ax.transAxes,
             fontsize=10,
             verticalalignment="top",
             bbox=dict(boxstyle="round", facecolor="wheat", alpha=0.8),
         )
 
-        # Add legend (limit to first few circles)
         handles, labels = ax.get_legend_handles_labels()
         if len(handles) > 8:
             handles = handles[:4] + handles[-4:]
             labels = labels[:4] + labels[-4:]
         ax.legend(handles, labels, loc="upper right", fontsize=8, ncol=2)
 
-        # Add interactive hover annotation for merge points
+        return lim
+
+    def _setup_interactivity(self, ax, merge_point_data, levels, lim):
+        """Set up hover annotation and click-to-swap event handlers"""
         annot = ax.annotate(
             "",
             xy=(0, 0),
@@ -2092,17 +2075,14 @@ class ACCVisualizationWidget(QWidget):
         )
 
         def on_hover(event):
-            """Handle mouse hover events"""
             if event.inaxes != ax:
                 annot.set_visible(False)
                 self.canvas.draw_idle()
                 return
 
-            # Check if mouse is near any merge point
             if event.xdata is None or event.ydata is None:
                 return
 
-            # Find closest merge point
             min_dist = float("inf")
             closest_point = None
 
@@ -2112,8 +2092,7 @@ class ACCVisualizationWidget(QWidget):
                     min_dist = dist
                     closest_point = (x, y, merge_angle, subtended_angle, local_sim, cluster_id)
 
-            # Show annotation if close enough (threshold based on axes limits)
-            threshold = lim * 0.05  # 5% of axis limit
+            threshold = lim * 0.05
             if min_dist < threshold and closest_point:
                 x, y, merge_angle, subtended_angle, local_sim, cluster_id = closest_point
                 annot.xy = (x, y)
@@ -2125,19 +2104,15 @@ class ACCVisualizationWidget(QWidget):
 
             self.canvas.draw_idle()
 
-        # Connect hover event
         self.canvas.mpl_connect("motion_notify_event", on_hover)
 
         def on_click(event):
-            """Handle mouse click events"""
             if event.inaxes != ax:
                 return
 
-            # Check if click is near any merge point
             if event.xdata is None or event.ydata is None:
                 return
 
-            # Find closest merge point
             min_dist = float("inf")
             closest_point = None
             closest_level_idx = None
@@ -2148,38 +2123,23 @@ class ACCVisualizationWidget(QWidget):
                     min_dist = dist
                     closest_point = (x, y, merge_angle, subtended_angle, local_sim, cluster_id)
 
-                    # Find level index for this cluster_id
                     for idx, level in enumerate(levels):
                         level_cluster_id = f"[{level['cluster1']}, {level['cluster2']}]"
                         if level_cluster_id == cluster_id:
                             closest_level_idx = idx
                             break
 
-            # If click is close enough, toggle swap
-            threshold = lim * 0.05  # 5% of axis limit
+            threshold = lim * 0.05
             if min_dist < threshold and closest_level_idx is not None:
-                # Toggle swap for this level
                 self.acc2_swaps[closest_level_idx] = not self.acc2_swaps.get(closest_level_idx, False)
-
-                # Redraw with swaps applied
                 self.plot_acc2(self.acc2_data, reset_swaps=False)
 
-                # Show feedback
                 _, _, _, _, _, cluster_id = closest_point
                 swap_state = "swapped" if self.acc2_swaps[closest_level_idx] else "normal"
                 self.info_label.setText(f"✓ {cluster_id} - {swap_state}")
                 self.info_label.setStyleSheet("color: blue; font-size: 10px;")
 
-        # Connect click event
         self.canvas.mpl_connect("button_press_event", on_click)
-
-        self.figure.tight_layout()
-        self.canvas.draw()
-        self.info_label.setText(f"✓ ACC2 Generated: {len(positions)} areas, {len(circles)} circles")
-        self.info_label.setStyleSheet("color: green; font-size: 10px;")
-
-        # Hide step controls for ACC2
-        self.step_controls.setVisible(False)
 
 
 # ── Undo/Redo Commands ──
@@ -3320,7 +3280,7 @@ class DataPanel(QWidget):
     def _on_similarity_method_changed(self):
         """Show/hide Raup-Crick iterations input based on selected method"""
         method = self.similarity_combo.currentData()
-        is_raup_crick = (method == "raup_crick")
+        is_raup_crick = method == "raup_crick"
         self.rc_iterations_label.setVisible(is_raup_crick)
         self.rc_iterations_input.setVisible(is_raup_crick)
 
@@ -3735,10 +3695,8 @@ class LeftPanel(ColumnPanel):
                         f"Matrix size: {result['local_matrix'].shape[0]}×{result['local_matrix'].shape[1]}",
                     )
         except Exception as e:
-            print(f"Error in edit_area_list: {e}")  # Debug
-            import traceback
-
-            traceback.print_exc()
+            logger.error("Error in edit_area_list: %s", e)
+            logger.debug("edit_area_list traceback", exc_info=True)
             QMessageBox.critical(self, "Error", f"An error occurred while opening the Area List Editor:\n{str(e)}")
 
 
@@ -3828,9 +3786,16 @@ class NMDSVisualizationWidget(QWidget):
         distance_matrix, labels = similarity_to_distance(similarity_dict)
 
         # Run NMDS (non-metric MDS)
-        mds = MDS(n_components=n_components, metric_mds=False, metric="precomputed",
-                   init="random", random_state=42, n_init=4, max_iter=300,
-                   normalized_stress="auto")
+        mds = MDS(
+            n_components=n_components,
+            metric_mds=False,
+            metric="precomputed",
+            init="random",
+            random_state=42,
+            n_init=4,
+            max_iter=300,
+            normalized_stress="auto",
+        )
         coords = mds.fit_transform(distance_matrix)
         stress = mds.stress_
 
@@ -3840,12 +3805,10 @@ class NMDSVisualizationWidget(QWidget):
         if n_components == 3:
             ax = self.figure.add_subplot(111, projection="3d")
 
-            ax.scatter(coords[:, 0], coords[:, 1], coords[:, 2],
-                       s=80, c="#1976D2", edgecolors="white", linewidths=0.5)
+            ax.scatter(coords[:, 0], coords[:, 1], coords[:, 2], s=80, c="#1976D2", edgecolors="white", linewidths=0.5)
 
             for i, label in enumerate(labels):
-                ax.text(coords[i, 0], coords[i, 1], coords[i, 2],
-                        f"  {label}", fontsize=9, color="#333333")
+                ax.text(coords[i, 0], coords[i, 1], coords[i, 2], f"  {label}", fontsize=9, color="#333333")
 
             ax.set_title(f"NMDS 3D (Stress = {stress:.4f})", fontsize=12, fontweight="bold")
             ax.set_xlabel("NMDS 1", fontsize=9)
@@ -3854,13 +3817,17 @@ class NMDSVisualizationWidget(QWidget):
         else:
             ax = self.figure.add_subplot(111)
 
-            ax.scatter(coords[:, 0], coords[:, 1], s=80, c="#1976D2", edgecolors="white",
-                       linewidths=0.5, zorder=5)
+            ax.scatter(coords[:, 0], coords[:, 1], s=80, c="#1976D2", edgecolors="white", linewidths=0.5, zorder=5)
 
             for i, label in enumerate(labels):
-                ax.annotate(label, (coords[i, 0], coords[i, 1]),
-                            textcoords="offset points", xytext=(6, 6),
-                            fontsize=9, color="#333333")
+                ax.annotate(
+                    label,
+                    (coords[i, 0], coords[i, 1]),
+                    textcoords="offset points",
+                    xytext=(6, 6),
+                    fontsize=9,
+                    color="#333333",
+                )
 
             ax.set_title(f"NMDS (Stress = {stress:.4f})", fontsize=12, fontweight="bold")
             ax.set_xlabel("NMDS 1", fontsize=10)
@@ -4396,17 +4363,15 @@ class MainWindow(QMainWindow):
                 clusters = final_step["clusters"]
                 if clusters:
                     cluster = clusters[0]
-                    print(f"[ACC] Generated: {len(acc_steps)} steps, {len(cluster['members'])} members")
+                    logger.info("[ACC] Generated: %d steps, %d members", len(acc_steps), len(cluster["members"]))
                 else:
-                    print("[ACC] Warning: No clusters found")
+                    logger.warning("[ACC] No clusters found")
             else:
-                print("[ACC] Warning: No steps generated")
+                logger.warning("[ACC] No steps generated")
 
         except Exception as e:
             QMessageBox.critical(self, "Error", f"Failed to generate visualization:\n{str(e)}")
-            import traceback
-
-            traceback.print_exc()
+            logger.debug("generate visualization traceback", exc_info=True)
 
     def generate_acc2(self):
         """Generate ACC2 visualization with default parameters"""
@@ -4417,7 +4382,7 @@ class MainWindow(QMainWindow):
             acc1_style = self.right_panel.acc2_acc1_style.isChecked()
             limit_angle = self.right_panel.acc2_limit_angle.isChecked()
             max_angle = float(self.right_panel.acc2_max_angle.text()) if limit_angle else None
-        except:
+        except (ValueError, AttributeError):
             min_diameter = 1.0
             max_diameter = 2.0
             acc1_style = False
@@ -4509,15 +4474,17 @@ class MainWindow(QMainWindow):
 
             # No message box - just silently complete
             angle_info = f", max angle: {max_angle}°" if max_angle else ""
-            print(
-                f"[ACC2] Generated: {len(acc2_data['positions'])} areas, diameter range: {min_diameter:.1f}-{max_diameter:.1f}{angle_info}"
+            logger.info(
+                "[ACC2] Generated: %d areas, diameter range: %.1f-%.1f%s",
+                len(acc2_data["positions"]),
+                min_diameter,
+                max_diameter,
+                angle_info,
             )
 
         except Exception as e:
             QMessageBox.critical(self, "Error", f"Failed to generate ACC2 visualization:\n{str(e)}")
-            import traceback
-
-            traceback.print_exc()
+            logger.debug("ACC2 visualization traceback", exc_info=True)
 
     def run_nmds(self):
         """Run NMDS based on selected matrix type"""
@@ -4550,14 +4517,11 @@ class MainWindow(QMainWindow):
                 else:
                     quality, color = "Poor", "#F44336"
                 self.nmds_panel.stress_label.setText(f"Stress: {stress:.4f} ({quality})")
-                self.nmds_panel.stress_label.setStyleSheet(
-                    f"font-size: 11px; font-weight: bold; color: {color};"
-                )
+                self.nmds_panel.stress_label.setStyleSheet(f"font-size: 11px; font-weight: bold; color: {color};")
 
         except Exception as e:
             QMessageBox.critical(self, "Error", f"Failed to run NMDS:\n{str(e)}")
-            import traceback
-            traceback.print_exc()
+            logger.debug("NMDS traceback", exc_info=True)
 
     def show_acc_log(self):
         """Show ACC generation log in a dialog"""
@@ -4574,6 +4538,7 @@ class MainWindow(QMainWindow):
 
 def main():
     """Main entry point"""
+    logging.basicConfig(level=logging.INFO, format="%(name)s - %(levelname)s - %(message)s")
     try:
         app = QApplication(sys.argv)
         app.setStyle("Fusion")
@@ -4581,10 +4546,7 @@ def main():
         window.show()
         sys.exit(app.exec_())
     except Exception as e:
-        print(f"ERROR in main(): {e}")
-        import traceback
-
-        traceback.print_exc()
+        logger.critical("ERROR in main(): %s", e, exc_info=True)
         sys.exit(1)
 
 

@@ -1,6 +1,7 @@
 import math
-from collections import defaultdict
 from itertools import combinations
+
+THETA_MAX_DEGREES = 180.0
 
 
 # ------------------------------------------------------------
@@ -13,6 +14,7 @@ class DendroNode:
     sim: 이 클러스터가 형성될 때의 유사도 (0~1 가정)
     left/right: 자식 노드 (리프면 None)
     """
+
     def __init__(self, members, sim, left=None, right=None):
         self.members = set(members)
         self.sim = sim
@@ -41,8 +43,8 @@ def extract_clusters_from_dendro(root: DendroNode):
             "diameter": None,
             "theta": None,
             "center": None,
-            "points": {},   # member -> (x,y)
-            "midline_angle": 0.0
+            "points": {},  # member -> (x,y)
+            "midline_angle": 0.0,
         })
         dfs(node.left)
         dfs(node.right)
@@ -135,7 +137,7 @@ def decorate_clusters(clusters, global_dendro: DendroNode, global_matrix: dict, 
             d = unit / global_sim
 
         c["diameter"] = d
-        c["theta"] = 180.0 * (1.0 - c["sim_local"])  # 서술한 공식
+        c["theta"] = THETA_MAX_DEGREES * (1.0 - c["sim_local"])  # 서술한 공식
 
 
 # ------------------------------------------------------------
@@ -153,8 +155,7 @@ def cart_add(a, b):
 def rotate_point(p, angle_deg):
     rad = math.radians(angle_deg)
     x, y = p
-    return (x * math.cos(rad) - y * math.sin(rad),
-            x * math.sin(rad) + y * math.cos(rad))
+    return (x * math.cos(rad) - y * math.sin(rad), x * math.sin(rad) + y * math.cos(rad))
 
 
 # ------------------------------------------------------------
@@ -334,17 +335,14 @@ def deep_copy_cluster(c):
         "theta": c["theta"],
         "center": tuple(c["center"]) if c["center"] else None,
         "points": dict(c["points"]),
-        "midline_angle": c["midline_angle"]
+        "midline_angle": c["midline_angle"],
     }
 
 
 # ------------------------------------------------------------
 # 11. 전체 ACC 빌더 (원본 - 단일 병합 버전)
 # ------------------------------------------------------------
-def build_acc_merged(local_dendro: DendroNode,
-                     global_dendro: DendroNode,
-                     global_matrix: dict,
-                     unit=1.0):
+def build_acc_merged(local_dendro: DendroNode, global_dendro: DendroNode, global_matrix: dict, unit=1.0):
     """
     Build ACC result by merging all clusters into one
     This is the original implementation that returns a single merged result
@@ -378,10 +376,7 @@ def build_acc_merged(local_dendro: DendroNode,
 # ------------------------------------------------------------
 # 11. ACC 빌더 - 단계별 버전
 # ------------------------------------------------------------
-def build_acc_steps(local_dendro: DendroNode,
-                   global_dendro: DendroNode,
-                   global_matrix: dict,
-                   unit=1.0):
+def build_acc_steps(local_dendro: DendroNode, global_dendro: DendroNode, global_matrix: dict, unit=1.0):
     """
     Build ACC step by step and return all intermediate states
 
@@ -418,7 +413,7 @@ def build_acc_steps(local_dendro: DendroNode,
         "current_cluster": deep_copy_cluster(base),
         "new_cluster": None,
         "description": f"Initial cluster with {len(base['members'])} members (sim_local={base['sim_local']:.3f})",
-        "highlighted_members": set(base["members"])
+        "highlighted_members": set(base["members"]),
     })
 
     # 6) 나머지 클러스터 차례로 붙이기
@@ -444,7 +439,7 @@ def build_acc_steps(local_dendro: DendroNode,
             "current_cluster": deep_copy_cluster(base),
             "new_cluster": deep_copy_cluster(c),
             "description": description,
-            "highlighted_members": new_members
+            "highlighted_members": new_members,
         })
 
     return steps
@@ -453,10 +448,7 @@ def build_acc_steps(local_dendro: DendroNode,
 # ------------------------------------------------------------
 # 12. 전체 ACC 빌더 (동심원 버전 - 사용하지 않음)
 # ------------------------------------------------------------
-def build_acc(local_dendro: DendroNode,
-              global_dendro: DendroNode,
-              global_matrix: dict,
-              unit=1.0):
+def build_acc(local_dendro: DendroNode, global_dendro: DendroNode, global_matrix: dict, unit=1.0):
     """
     Build ACC result with multiple concentric circles
     Each cluster gets its own circle based on its diameter
@@ -489,10 +481,7 @@ def build_acc(local_dendro: DendroNode,
     for c in positioned_clusters:
         all_members.update(c["members"])
 
-    return {
-        "clusters": positioned_clusters,
-        "all_members": all_members
-    }
+    return {"clusters": positioned_clusters, "all_members": all_members}
 
 
 # ------------------------------------------------------------
@@ -537,6 +526,6 @@ if __name__ == "__main__":
         print(f"    Members: {cluster['members']}")
         print(f"    Diameter: {cluster['diameter']:.3f}")
         print(f"    Theta: {cluster['theta']:.2f}°")
-        print(f"    Points:")
+        print("    Points:")
         for m, p in cluster["points"].items():
             print(f"      {m}: ({p[0]:.3f}, {p[1]:.3f})")
