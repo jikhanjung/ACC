@@ -2,8 +2,8 @@
 
 **ACC (Area Affinity in Concentric Circles)** - 계층적 클러스터 관계 시각화 도구
 
-버전: 0.0.5
-최종 업데이트: 2026-02-26
+버전: 0.0.6
+최종 업데이트: 2026-03-03
 
 ---
 
@@ -1211,6 +1211,19 @@ Permission is hereby granted, free of charge, to any person obtaining a copy of 
 ---
 
 ## 변경 이력
+
+### Version 0.0.6 (2026-03-03)
+- **트리 기반 ACC 알고리즘**:
+  - ACCNode 트리 기반 Build/Render 분리
+  - Diversity index로 area 순서(left/right) 결정
+  - Min/Max Diameter 컨트롤 추가
+  - Diameter 변경 시 트리 재구축 없이 좌표만 재계산
+- **ACC2 제거**: ACC2 탭 및 관련 코드 완전 삭제
+- **코드 품질 개선**:
+  - 매직넘버 상수화 (THETA_MAX_DEGREES, DEFAULT_SIMILARITY)
+  - print→logging 전환
+  - bare except 수정
+  - GUI 테스트 스위트 추가
 
 ### Version 0.0.5 (2026-02-26)
 - **Raw Data 입력**:

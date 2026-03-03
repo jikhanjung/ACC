@@ -10,7 +10,6 @@ Four-column layout with step-by-step clustering visualization:
 """
 
 # Import matplotlib components with proper backend setup
-import copy
 import json
 import math
 import os
@@ -60,16 +59,15 @@ matplotlib.use("Qt5Agg")
 import logging
 from io import StringIO
 
-import matplotlib.patches as mpl_patches
 import matplotlib.pyplot as plt
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.figure import Figure
 from scipy.cluster.hierarchy import dendrogram
 
-from acc_core_acc2 import build_acc2, calculate_merge_points, generate_connection_lines
 from acc_utils import (
-    build_acc_from_matrices_iterative,
+    build_acc_from_matrices_tree,
     dict_matrix_from_dataframe,
+    rerender_acc_tree,
     validate_similarity_matrix,
 )
 from clustering_steps import ClusteringStepManager
@@ -77,10 +75,45 @@ from clustering_steps import ClusteringStepManager
 logger = logging.getLogger(__name__)
 
 
-def compass_to_cart(r, angle_deg):
-    """Convert compass angle (0°=north, positive=clockwise) to cartesian coordinates"""
-    rad = math.radians(angle_deg)
-    return (r * math.sin(rad), r * math.cos(rad))
+def _format_members_hierarchical(node):
+    """Format members showing tree hierarchy, e.g. {{A, B}, {C, D}}."""
+    if node.is_leaf:
+        return next(iter(node.members))
+    left_str = _format_members_hierarchical(node.left)
+    right_str = _format_members_hierarchical(node.right)
+    return "{" + left_str + ", " + right_str + "}"
+
+
+def _format_acc_tree(node, radius_fn, indent=0, direction=0.0):
+    """Format ACCNode tree as readable text with display diameter."""
+    from acc_core_tree import pol2cart
+
+    if node is None:
+        return ""
+    prefix = "  " * indent
+    lines = []
+    if node.is_leaf:
+        name = next(iter(node.members))
+        x, y = node.points.get(name, (0.0, 0.0))
+        lines.append(f"{prefix}Leaf: {name}  (diversity={node.diversity}, x={x:.4f}, y={y:.4f})")
+    else:
+        members_str = _format_members_hierarchical(node)
+        sr = radius_fn(node.global_sim)
+        display_diameter = sr * 2
+        nx, ny = pol2cart(sr, -direction)
+        lines.append(f"{prefix}Node [merge_order={node.merge_order}]")
+        lines.append(f"{prefix}  members:    {{{members_str}}}")
+        lines.append(f"{prefix}  local_sim:  {node.local_sim:.4f}")
+        lines.append(f"{prefix}  global_sim: {node.global_sim:.4f}")
+        lines.append(f"{prefix}  angle:      {node.angle:.2f}°")
+        lines.append(f"{prefix}  diameter:   {display_diameter:.4f}")
+        lines.append(f"{prefix}  position:   ({nx:.4f}, {ny:.4f})")
+        half = node.angle / 2.0
+        lines.append(f"{prefix}  left:")
+        lines.append(_format_acc_tree(node.left, radius_fn, indent + 2, direction - half))
+        lines.append(f"{prefix}  right:")
+        lines.append(_format_acc_tree(node.right, radius_fn, indent + 2, direction + half))
+    return "\n".join(lines)
 
 
 def get_resource_path(relative_path):
@@ -1318,6 +1351,10 @@ class ACCVisualizationWidget(QWidget):
         super().__init__(parent)
         self.acc_steps = []  # List of all steps
         self.current_step = 0
+        self._hover_annotation = None
+        self._internal_node_data = []
+        self._leaf_node_data = []
+        self._hover_cid = None  # motion_notify connection id
         self.init_ui()
 
     def init_ui(self):
@@ -1384,6 +1421,8 @@ class ACCVisualizationWidget(QWidget):
         step_layout.addLayout(slider_layout)
 
         self.step_controls.setLayout(step_layout)
+        # show_internal_nodes_cb is set by the parent panel (RightPanel)
+        self.show_internal_nodes_cb = None
         self.step_controls.setVisible(False)
         layout.addWidget(self.step_controls)
 
@@ -1494,6 +1533,7 @@ class ACCVisualizationWidget(QWidget):
     def plot_acc_step(self, step_info):
         """Plot a single ACC step (supports new iterative algorithm)"""
         self.figure.clear()
+        self._hover_annotation = None  # Reset — cleared with figure
         ax = self.figure.add_subplot(111)
 
         # New algorithm uses "clusters" list instead of single "current_cluster"
@@ -1611,21 +1651,36 @@ class ACCVisualizationWidget(QWidget):
         title = f"ACC Step {self.current_step}: {action}"
         ax.set_title(title, fontsize=11, fontweight="bold")
 
-        # Add info text
-        info_lines = [f"Active Clusters: {len(clusters)}", f"Total Members: {total_members}", f"Action: {action}"]
-        if highlighted_members:
-            info_lines.append(f"Added: {', '.join(sorted(highlighted_members))}")
+        # STEP 4: Draw internal node markers (if enabled)
+        all_internal_nodes = []
+        for cluster in clusters:
+            all_internal_nodes.extend(cluster.get("internal_nodes", []))
 
-        info_text = "\n".join(info_lines)
-        ax.text(
-            0.02,
-            0.98,
-            info_text,
-            transform=ax.transAxes,
-            fontsize=9,
-            verticalalignment="top",
-            bbox=dict(boxstyle="round", facecolor="wheat", alpha=0.8),
-        )
+        if self.show_internal_nodes_cb and self.show_internal_nodes_cb.isChecked():
+            for inode in all_internal_nodes:
+                ix, iy = inode["position"]
+                ax.plot(ix, iy, "D", markersize=7, color="#888888",
+                        markeredgecolor="black", markeredgewidth=1.0, alpha=0.7, zorder=3)
+            self._internal_node_data = all_internal_nodes
+        else:
+            self._internal_node_data = []
+
+        # Collect leaf node data for hover
+        self._leaf_node_data = []
+        for cluster in clusters:
+            diversity_map = cluster.get("diversity", {})
+            for member, (x, y, _r) in all_points.items():
+                if member in cluster.get("members", set()):
+                    self._leaf_node_data.append({
+                        "name": member,
+                        "position": (x, y),
+                        "diversity": diversity_map.get(member, 0),
+                    })
+
+        # Connect hover event (disconnect previous if any)
+        if self._hover_cid is not None:
+            self.canvas.mpl_disconnect(self._hover_cid)
+        self._hover_cid = self.canvas.mpl_connect("motion_notify_event", self._on_hover)
 
         self.figure.tight_layout()
         self.canvas.draw()
@@ -1633,6 +1688,84 @@ class ACCVisualizationWidget(QWidget):
         # Update info label
         self.info_label.setText(f"✓ Step {self.current_step}: {total_members} members")
         self.info_label.setStyleSheet("color: green; font-size: 10px;")
+
+    def _on_toggle_internal_nodes(self):
+        """Redraw current step when internal nodes checkbox changes."""
+        if self.acc_steps and 0 <= self.current_step < len(self.acc_steps):
+            self.plot_acc_step(self.acc_steps[self.current_step])
+
+    def _on_hover(self, event):
+        """Handle mouse hover over node markers (internal + leaf)."""
+        if event.inaxes is None:
+            self._hide_annotation()
+            return
+        ax = event.inaxes
+        xlim = ax.get_xlim()
+        threshold = (xlim[1] - xlim[0]) * 0.03
+
+        min_dist = float("inf")
+        nearest = None
+        nearest_type = None
+
+        for inode in self._internal_node_data:
+            ix, iy = inode["position"]
+            dist = math.sqrt((event.xdata - ix)**2 + (event.ydata - iy)**2)
+            if dist < min_dist:
+                min_dist = dist
+                nearest = inode
+                nearest_type = "internal"
+
+        for leaf in self._leaf_node_data:
+            lx, ly = leaf["position"]
+            dist = math.sqrt((event.xdata - lx)**2 + (event.ydata - ly)**2)
+            if dist < min_dist:
+                min_dist = dist
+                nearest = leaf
+                nearest_type = "leaf"
+
+        if nearest and min_dist < threshold:
+            self._show_annotation(nearest, nearest_type)
+        else:
+            self._hide_annotation()
+
+    def _show_annotation(self, node_data, node_type):
+        """Show tooltip annotation for a node."""
+        ax = self.figure.axes[0] if self.figure.axes else None
+        if ax is None:
+            return
+        ix, iy = node_data["position"]
+        if node_type == "internal":
+            text = (
+                f"Members: {', '.join(node_data['members'])}\n"
+                f"Local Sim: {node_data['local_sim']:.3f}\n"
+                f"Global Sim: {node_data['global_sim']:.3f}\n"
+                f"Diameter: {node_data['diameter']:.3f}\n"
+                f"Angle: {node_data['angle']:.1f}°\n"
+                f"Merge Step: {node_data['merge_order']}"
+            )
+        else:
+            text = (
+                f"Area: {node_data['name']}\n"
+                f"Diversity: {node_data['diversity']}"
+            )
+        if self._hover_annotation is None:
+            self._hover_annotation = ax.annotate(
+                text, xy=(ix, iy), xytext=(20, 20),
+                textcoords="offset points",
+                bbox=dict(boxstyle="round,pad=0.5", fc="lightyellow", ec="gray", alpha=0.95),
+                fontsize=9, family="monospace",
+            )
+        else:
+            self._hover_annotation.xy = (ix, iy)
+            self._hover_annotation.set_text(text)
+            self._hover_annotation.set_visible(True)
+        self.canvas.draw_idle()
+
+    def _hide_annotation(self):
+        """Hide the hover tooltip annotation."""
+        if self._hover_annotation is not None and self._hover_annotation.get_visible():
+            self._hover_annotation.set_visible(False)
+            self.canvas.draw_idle()
 
     def plot_acc_result(self, acc_result):
         """Plot ACC result with multiple concentric circles"""
@@ -1721,425 +1854,6 @@ class ACCVisualizationWidget(QWidget):
         self.canvas.draw()
         self.info_label.setText(f"✓ Generated: {len(clusters)} clusters, {len(all_members)} members")
         self.info_label.setStyleSheet("color: green; font-size: 10px;")
-
-    def get_all_descendants(self, cluster_id, levels, positions):
-        """Get all area descendants of a cluster"""
-        # If it's an area (not a cluster), return itself
-        if cluster_id in positions:
-            return [cluster_id]
-
-        # Find the level that created this cluster
-        for level in levels:
-            level_cluster_id = f"[{level['cluster1']}, {level['cluster2']}]"
-            if level_cluster_id == cluster_id:
-                # Recursively get descendants from both children
-                child1_descendants = self.get_all_descendants(level["cluster1"], levels, positions)
-                child2_descendants = self.get_all_descendants(level["cluster2"], levels, positions)
-                return child1_descendants + child2_descendants
-
-        return []
-
-    def apply_acc2_swaps(self, acc2_data, swaps):
-        """Apply swaps to ACC2 data and return modified copy
-
-        Strategy: For each swap, exchange the angular positions of two child branches
-        by calculating the offset between them and their descendants.
-        """
-        data = copy.deepcopy(acc2_data)
-        positions = data["positions"]
-        levels = data["levels"]
-
-        # Apply swaps in order from lowest level (earliest merge) to highest level (latest merge)
-        sorted_swap_levels = sorted([idx for idx, should_swap in swaps.items() if should_swap])
-
-        for level_idx in sorted_swap_levels:
-            if level_idx >= len(levels):
-                continue
-
-            level = levels[level_idx]
-            cluster1_id = level["cluster1"]
-            cluster2_id = level["cluster2"]
-            cluster_id = f"[{cluster1_id}, {cluster2_id}]"
-
-            # Calculate current merge point based on current positions
-            current_merge_points = calculate_merge_points(levels, positions)
-            if cluster_id not in current_merge_points:
-                continue
-
-            # Get the angles of the two children (could be areas or clusters)
-            def get_child_angle(child_id):
-                if child_id in positions:
-                    return positions[child_id]["angle"]
-                if child_id in current_merge_points:
-                    return current_merge_points[child_id]["angle"]
-                return None
-
-            child1_angle = get_child_angle(cluster1_id)
-            child2_angle = get_child_angle(cluster2_id)
-
-            if child1_angle is None or child2_angle is None:
-                continue
-
-            # Get descendants for each child
-            child1_descendants = self.get_all_descendants(cluster1_id, levels, positions)
-            child2_descendants = self.get_all_descendants(cluster2_id, levels, positions)
-
-            # Calculate the angular offset needed to swap the two children
-            # We want to swap them around their midpoint
-            midpoint_angle = (child1_angle + child2_angle) / 2.0
-            offset1 = child1_angle - midpoint_angle
-            offset2 = child2_angle - midpoint_angle
-
-            # Store new angles temporarily to avoid overwriting during swap
-            new_angles = {}
-
-            # Move child1's descendants to where child2 was
-            for area in child1_descendants:
-                if area in positions:
-                    current_angle = positions[area]["angle"]
-                    # Calculate relative position within child1
-                    relative_angle = current_angle - child1_angle
-                    # Place it at child2's position with same relative angle
-                    new_angles[area] = child2_angle + relative_angle
-
-            # Move child2's descendants to where child1 was
-            for area in child2_descendants:
-                if area in positions:
-                    current_angle = positions[area]["angle"]
-                    # Calculate relative position within child2
-                    relative_angle = current_angle - child2_angle
-                    # Place it at child1's position with same relative angle
-                    new_angles[area] = child1_angle + relative_angle
-
-            # Apply all new angles at once
-            for area, new_angle in new_angles.items():
-                positions[area]["angle"] = new_angle
-
-        # Recalculate merge points and lines with final positions
-        data["merge_points"] = calculate_merge_points(levels, positions)
-        data["lines"] = generate_connection_lines(levels, positions, data["merge_points"])
-
-        return data
-
-    def plot_acc2(self, acc2_data, reset_swaps=True, acc1_style=False):
-        """Plot ACC2 visualization with dendrogram on concentric circles"""
-        if acc1_style:
-            acc2_data = self._apply_acc1_style(acc2_data)
-
-        # Store ACC2 data for interactive manipulation
-        self.acc2_data = acc2_data
-        self.acc1_style = acc1_style
-
-        # Initialize or keep swap state
-        if reset_swaps or not hasattr(self, "acc2_swaps"):
-            self.acc2_swaps = {}
-
-        # Apply swaps to create modified data
-        working_data = self.apply_acc2_swaps(acc2_data, self.acc2_swaps)
-
-        self.figure.clear()
-        ax = self.figure.add_subplot(111)
-        ax.set_aspect("equal")
-        ax.grid(True, alpha=0.3)
-        ax.axhline(y=0, color="k", linewidth=0.5, alpha=0.3)
-        ax.axvline(x=0, color="k", linewidth=0.5, alpha=0.3)
-
-        circles = working_data["circles"]
-        positions = working_data["positions"]
-        merge_points = working_data["merge_points"]
-        lines = working_data["lines"]
-        levels = working_data["levels"]
-
-        radius_to_sim = {level["radius"]: level["global_sim"] for level in levels}
-
-        self._draw_concentric_circles(ax, circles, radius_to_sim)
-        self._draw_arc_lines(ax, lines)
-        self._draw_radial_lines(ax, lines, circles)
-        self._draw_area_points(ax, circles, positions)
-        merge_point_data = self._draw_merge_points(ax, positions, merge_points, levels)
-        lim = self._setup_plot_decorations(ax, circles, positions, levels)
-        self._setup_interactivity(ax, merge_point_data, levels, lim)
-
-        self.figure.tight_layout()
-        self.canvas.draw()
-        self.info_label.setText(f"✓ ACC2 Generated: {len(positions)} areas, {len(circles)} circles")
-        self.info_label.setStyleSheet("color: green; font-size: 10px;")
-
-        # Hide step controls for ACC2
-        self.step_controls.setVisible(False)
-
-    def _apply_acc1_style(self, acc2_data):
-        """Apply ACC1 style: place areas on their first merge circle instead of innermost"""
-        acc2_data = copy.deepcopy(acc2_data)
-        area_to_first_merge_radius = {}
-
-        for level_idx, level in enumerate(acc2_data["levels"]):
-            cluster1 = level["cluster1"]
-            cluster2 = level["cluster2"]
-            merge_radius = level["radius"]
-
-            def get_areas(cluster_id):
-                if cluster_id in acc2_data["positions"]:
-                    return [cluster_id]
-                areas = []
-                for lvl in acc2_data["levels"]:
-                    if f"[{lvl['cluster1']}, {lvl['cluster2']}]" == cluster_id:
-                        areas.extend(get_areas(lvl["cluster1"]))
-                        areas.extend(get_areas(lvl["cluster2"]))
-                        break
-                return areas
-
-            for area in get_areas(cluster1) + get_areas(cluster2):
-                if area not in area_to_first_merge_radius:
-                    area_to_first_merge_radius[area] = merge_radius
-
-        for area, merge_radius in area_to_first_merge_radius.items():
-            if area in acc2_data["positions"]:
-                acc2_data["positions"][area]["radius"] = merge_radius
-
-        return acc2_data
-
-    def _draw_concentric_circles(self, ax, circles, radius_to_sim):
-        """Draw all concentric circles with color-coded similarity labels"""
-        circle_colors = plt.cm.rainbow(np.linspace(0, 1, len(circles)))
-
-        for idx, radius in enumerate(circles):
-            if radius == 0.5:
-                label = "Areas"
-            else:
-                global_sim = radius_to_sim.get(radius, 0.0)
-                label = f"global_sim={global_sim:.3f}"
-
-            circle = plt.Circle(
-                (0, 0),
-                radius,
-                fill=False,
-                edgecolor=circle_colors[idx],
-                linewidth=2,
-                linestyle="-",
-                alpha=0.7,
-                label=label,
-            )
-            ax.add_patch(circle)
-
-    def _draw_arc_lines(self, ax, lines):
-        """Draw arc connection lines between merge points"""
-        for line in lines:
-            if line["type"] == "arc":
-                radius = line["radius"]
-                angle_start = line["angle_start"]
-                angle_end = line["angle_end"]
-
-                # Convert from compass to matplotlib convention
-                mpl_angle_start = 90 - angle_start
-                mpl_angle_end = 90 - angle_end
-
-                if mpl_angle_start > mpl_angle_end:
-                    mpl_angle_start, mpl_angle_end = mpl_angle_end, mpl_angle_start
-
-                arc = mpl_patches.Arc(
-                    (0, 0),
-                    2 * radius,
-                    2 * radius,
-                    angle=0,
-                    theta1=mpl_angle_start,
-                    theta2=mpl_angle_end,
-                    color="black",
-                    linewidth=2,
-                    alpha=0.8,
-                )
-                ax.add_patch(arc)
-
-    def _draw_radial_lines(self, ax, lines, circles):
-        """Draw radial connection lines between circles"""
-        innermost_radius = min(circles) if circles else 0.5
-
-        for line in lines:
-            if line["type"] == "radial":
-                r1, angle = line["from"]
-                r2, _ = line["to"]
-
-                # Skip radial lines starting from innermost circle if ACC1 style
-                if self.acc1_style and abs(r1 - innermost_radius) < 0.001:
-                    continue
-
-                x1, y1 = compass_to_cart(r1, angle)
-                x2, y2 = compass_to_cart(r2, angle)
-                ax.plot([x1, x2], [y1, y2], "k-", linewidth=2, alpha=0.8)
-
-    def _draw_area_points(self, ax, circles, positions):
-        """Draw area points and labels"""
-        max_radius = max(circles) if circles else 1.0
-        label_offset = max_radius * 0.08
-
-        for area, pos in positions.items():
-            angle = pos["angle"]
-            radius = pos["radius"]
-
-            original_r = math.sqrt(pos["x"] ** 2 + pos["y"] ** 2) if (pos["x"] ** 2 + pos["y"] ** 2) > 0 else 1
-            scale = radius / original_r if original_r > 0 else 1
-            x, y = pos["x"] * scale, pos["y"] * scale
-
-            ax.scatter(x, y, c="darkblue", s=200, zorder=10, edgecolors="black", linewidth=2)
-
-            label_r = radius - label_offset
-            label_x, label_y = compass_to_cart(label_r, angle)
-            ax.text(label_x, label_y, area, fontsize=14, ha="center", va="center", fontweight="bold", color="darkblue")
-
-    def _draw_merge_points(self, ax, positions, merge_points, levels):
-        """Draw merge points and return their data for interactive hover/click"""
-        merge_point_data = []
-
-        cluster_to_subsim = {}
-        cluster_to_children = {}
-        for level in levels:
-            cluster_id = f"[{level['cluster1']}, {level['cluster2']}]"
-            cluster_to_subsim[cluster_id] = level["local_sim"]
-            cluster_to_children[cluster_id] = (level["cluster1"], level["cluster2"])
-
-        for cluster_id, mp in merge_points.items():
-            merge_angle = mp["angle"]
-            radius = mp["radius"]
-            x, y = compass_to_cart(radius, merge_angle)
-
-            ax.scatter(x, y, c="red", s=50, zorder=9, edgecolors="black", linewidth=1, alpha=0.6)
-
-            subtended_angle = 0.0
-            if cluster_id in cluster_to_children:
-                child1_id, child2_id = cluster_to_children[cluster_id]
-
-                def get_child_angle(child_id):
-                    if child_id in positions:
-                        return positions[child_id]["angle"]
-                    if child_id in merge_points:
-                        return merge_points[child_id]["angle"]
-                    return None
-
-                child1_angle = get_child_angle(child1_id)
-                child2_angle = get_child_angle(child2_id)
-
-                if child1_angle is not None and child2_angle is not None:
-                    subtended_angle = abs(child2_angle - child1_angle)
-                    if subtended_angle > 180:
-                        subtended_angle = 360 - subtended_angle
-
-            local_sim = cluster_to_subsim.get(cluster_id, 0.0)
-            merge_point_data.append((x, y, merge_angle, subtended_angle, local_sim, cluster_id))
-
-        return merge_point_data
-
-    def _setup_plot_decorations(self, ax, circles, positions, levels):
-        """Set plot limits, title, info text, and legend. Returns lim for interactivity threshold."""
-        max_radius = max(circles)
-        lim = max_radius * 1.2
-        ax.set_xlim(-lim, lim)
-        ax.set_ylim(-lim, lim)
-
-        ax.set_title("ACC2: Dendrogram on Concentric Circles", fontsize=12, fontweight="bold")
-
-        info_lines = [
-            f"Total areas: {len(positions)}",
-            f"Merge levels: {len(levels)}",
-            f"Circles: {len(circles)}",
-            f"All areas at r={circles[0]:.1f}",
-        ]
-        ax.text(
-            0.02,
-            0.98,
-            "\n".join(info_lines),
-            transform=ax.transAxes,
-            fontsize=10,
-            verticalalignment="top",
-            bbox=dict(boxstyle="round", facecolor="wheat", alpha=0.8),
-        )
-
-        handles, labels = ax.get_legend_handles_labels()
-        if len(handles) > 8:
-            handles = handles[:4] + handles[-4:]
-            labels = labels[:4] + labels[-4:]
-        ax.legend(handles, labels, loc="upper right", fontsize=8, ncol=2)
-
-        return lim
-
-    def _setup_interactivity(self, ax, merge_point_data, levels, lim):
-        """Set up hover annotation and click-to-swap event handlers"""
-        annot = ax.annotate(
-            "",
-            xy=(0, 0),
-            xytext=(10, 10),
-            textcoords="offset points",
-            bbox=dict(boxstyle="round", fc="yellow", alpha=0.9),
-            fontsize=9,
-            visible=False,
-            zorder=100,
-        )
-
-        def on_hover(event):
-            if event.inaxes != ax:
-                annot.set_visible(False)
-                self.canvas.draw_idle()
-                return
-
-            if event.xdata is None or event.ydata is None:
-                return
-
-            min_dist = float("inf")
-            closest_point = None
-
-            for x, y, merge_angle, subtended_angle, local_sim, cluster_id in merge_point_data:
-                dist = ((event.xdata - x) ** 2 + (event.ydata - y) ** 2) ** 0.5
-                if dist < min_dist:
-                    min_dist = dist
-                    closest_point = (x, y, merge_angle, subtended_angle, local_sim, cluster_id)
-
-            threshold = lim * 0.05
-            if min_dist < threshold and closest_point:
-                x, y, merge_angle, subtended_angle, local_sim, cluster_id = closest_point
-                annot.xy = (x, y)
-                text = f"{cluster_id}\nAngle: {subtended_angle:.1f}°\nSub sim: {local_sim:.3f}"
-                annot.set_text(text)
-                annot.set_visible(True)
-            else:
-                annot.set_visible(False)
-
-            self.canvas.draw_idle()
-
-        self.canvas.mpl_connect("motion_notify_event", on_hover)
-
-        def on_click(event):
-            if event.inaxes != ax:
-                return
-
-            if event.xdata is None or event.ydata is None:
-                return
-
-            min_dist = float("inf")
-            closest_point = None
-            closest_level_idx = None
-
-            for x, y, merge_angle, subtended_angle, local_sim, cluster_id in merge_point_data:
-                dist = ((event.xdata - x) ** 2 + (event.ydata - y) ** 2) ** 0.5
-                if dist < min_dist:
-                    min_dist = dist
-                    closest_point = (x, y, merge_angle, subtended_angle, local_sim, cluster_id)
-
-                    for idx, level in enumerate(levels):
-                        level_cluster_id = f"[{level['cluster1']}, {level['cluster2']}]"
-                        if level_cluster_id == cluster_id:
-                            closest_level_idx = idx
-                            break
-
-            threshold = lim * 0.05
-            if min_dist < threshold and closest_level_idx is not None:
-                self.acc2_swaps[closest_level_idx] = not self.acc2_swaps.get(closest_level_idx, False)
-                self.plot_acc2(self.acc2_data, reset_swaps=False)
-
-                _, _, _, _, _, cluster_id = closest_point
-                swap_state = "swapped" if self.acc2_swaps[closest_level_idx] else "normal"
-                self.info_label.setText(f"✓ {cluster_id} - {swap_state}")
-                self.info_label.setStyleSheet("color: blue; font-size: 10px;")
-
-        self.canvas.mpl_connect("button_press_event", on_click)
 
 
 # ── Undo/Redo Commands ──
@@ -3932,7 +3646,7 @@ class NMDSPanel(ColumnPanel):
 
 
 class RightPanel(ColumnPanel):
-    """Right panel: ACC visualization with tabs for ACC1 and ACC2"""
+    """Right panel: ACC visualization"""
 
     def __init__(self, parent=None):
         super().__init__("ACC Visualization", parent)
@@ -3942,7 +3656,7 @@ class RightPanel(ColumnPanel):
         # Button layout (horizontal)
         button_layout = QHBoxLayout()
 
-        # Single Generate button
+        # Generate button
         self.generate_btn = QPushButton("🎯 Generate ACC")
         self.generate_btn.setStyleSheet("""
             QPushButton {
@@ -3963,8 +3677,8 @@ class RightPanel(ColumnPanel):
         self.generate_btn.clicked.connect(self.on_generate_clicked)
         button_layout.addWidget(self.generate_btn, stretch=2)
 
-        # Show Log button
-        self.show_log_btn = QPushButton("📋 Show Log")
+        # Show Data button
+        self.show_log_btn = QPushButton("📋 Show Data")
         self.show_log_btn.setStyleSheet("""
             QPushButton {
                 background-color: #2196F3;
@@ -3985,190 +3699,84 @@ class RightPanel(ColumnPanel):
                 color: #666;
             }
         """)
-        self.show_log_btn.clicked.connect(self.on_show_log_clicked)
+        self.show_log_btn.clicked.connect(self.on_show_data_clicked)
         self.show_log_btn.setEnabled(False)  # Disabled until ACC is generated
         button_layout.addWidget(self.show_log_btn, stretch=1)
 
         self.content_layout.addLayout(button_layout)
 
-        # Create tab widget
-        self.tab_widget = QTabWidget()
-        self.tab_widget.setStyleSheet("""
-            QTabWidget::pane {
-                border: 1px solid #ccc;
-                border-radius: 4px;
-            }
-            QTabBar::tab {
-                background-color: #f0f0f0;
-                padding: 8px 16px;
-                margin-right: 2px;
-                border: 1px solid #ccc;
-                border-bottom: none;
-                border-top-left-radius: 4px;
-                border-top-right-radius: 4px;
-            }
-            QTabBar::tab:selected {
-                background-color: white;
-                font-weight: bold;
-            }
-            QTabBar::tab:hover {
-                background-color: #e0e0e0;
-            }
-        """)
+        # Diameter controls
+        diameter_panel = QWidget()
+        diameter_layout = QHBoxLayout(diameter_panel)
+        diameter_layout.setContentsMargins(5, 2, 5, 2)
 
-        # Tab 1: ACC (original)
+        lineedit_style = """
+            QLineEdit {
+                padding: 4px;
+                border: 1px solid #ccc;
+                border-radius: 3px;
+            }
+        """
+
+        diameter_layout.addWidget(QLabel("Min Dia."))
+        self.min_diameter = QLineEdit("1")
+        self.min_diameter.setFixedWidth(30)
+        self.min_diameter.setStyleSheet(lineedit_style)
+        self.min_diameter.setToolTip("Minimum circle diameter (similarity=1)")
+        self.min_diameter.editingFinished.connect(self.on_diameter_changed)
+        diameter_layout.addWidget(self.min_diameter)
+
+        diameter_layout.addWidget(QLabel("Max Dia."))
+        self.max_diameter = QLineEdit("6")
+        self.max_diameter.setFixedWidth(30)
+        self.max_diameter.setStyleSheet(lineedit_style)
+        self.max_diameter.setToolTip("Maximum circle diameter (similarity≈0)")
+        self.max_diameter.editingFinished.connect(self.on_diameter_changed)
+        diameter_layout.addWidget(self.max_diameter)
+
+        self.show_internal_nodes_cb = QCheckBox("Nodes")
+        self.show_internal_nodes_cb.setChecked(False)
+        diameter_layout.addWidget(self.show_internal_nodes_cb)
+
+        diameter_layout.addStretch()
+        self.content_layout.addWidget(diameter_panel)
+
+        # ACC visualization widget (no tabs)
         self.acc_widget = ACCVisualizationWidget()
-        self.tab_widget.addTab(self.acc_widget, "ACC")
-
-        # Tab 2: ACC2 with options
-        self.acc2_tab = QWidget()
-        acc2_layout = QVBoxLayout(self.acc2_tab)
-        acc2_layout.setContentsMargins(0, 0, 0, 0)
-        acc2_layout.setSpacing(5)
-
-        # ACC2 options panel
-        options_panel = QWidget()
-        options_layout = QHBoxLayout(options_panel)
-        options_layout.setContentsMargins(5, 5, 5, 5)
-
-        options_label = QLabel("<b>ACC2 Options:</b>")
-        options_layout.addWidget(options_label)
-
-        # Min diameter
-        options_layout.addWidget(QLabel("Min Diameter:"))
-        self.acc2_min_diameter = QLineEdit("1.0")
-        self.acc2_min_diameter.setFixedWidth(60)
-        self.acc2_min_diameter.setStyleSheet("""
-            QLineEdit {
-                padding: 4px;
-                border: 1px solid #ccc;
-                border-radius: 3px;
-            }
-        """)
-        options_layout.addWidget(self.acc2_min_diameter)
-
-        # Max diameter
-        options_layout.addWidget(QLabel("Max Diameter:"))
-        self.acc2_max_diameter = QLineEdit("2.0")
-        self.acc2_max_diameter.setFixedWidth(60)
-        self.acc2_max_diameter.setStyleSheet("""
-            QLineEdit {
-                padding: 4px;
-                border: 1px solid #ccc;
-                border-radius: 3px;
-            }
-        """)
-        options_layout.addWidget(self.acc2_max_diameter)
-
-        # ACC1 Style checkbox
-        self.acc2_acc1_style = QCheckBox("ACC1 Style")
-        self.acc2_acc1_style.setToolTip("Place areas on their first merge circle instead of innermost circle")
-        options_layout.addWidget(self.acc2_acc1_style)
-
-        # Limit Angle checkbox
-        self.acc2_limit_angle = QCheckBox("Limit Angle:")
-        self.acc2_limit_angle.setToolTip("Scale angles to fit within max angle limit")
-        options_layout.addWidget(self.acc2_limit_angle)
-
-        # Max angle input
-        self.acc2_max_angle = QLineEdit("180")
-        self.acc2_max_angle.setFixedWidth(50)
-        self.acc2_max_angle.setStyleSheet("""
-            QLineEdit {
-                padding: 4px;
-                border: 1px solid #ccc;
-                border-radius: 3px;
-            }
-        """)
-        self.acc2_max_angle.setToolTip("Maximum total angular span (default: 180)")
-        self.acc2_max_angle.setEnabled(False)  # Disabled until checkbox is checked
-        options_layout.addWidget(self.acc2_max_angle)
-
-        # Connect checkbox to enable/disable input
-        self.acc2_limit_angle.stateChanged.connect(
-            lambda state: self.acc2_max_angle.setEnabled(state == 2)  # 2 = Qt.CheckState.Checked
-        )
-
-        # Connect signals for real-time updates
-        self.acc2_min_diameter.editingFinished.connect(self.on_acc2_options_changed)
-        self.acc2_max_diameter.editingFinished.connect(self.on_acc2_options_changed)
-        self.acc2_acc1_style.stateChanged.connect(self.on_acc2_options_changed)
-        self.acc2_limit_angle.stateChanged.connect(self.on_acc2_options_changed)
-        self.acc2_max_angle.editingFinished.connect(self.on_acc2_options_changed)
-
-        options_layout.addStretch()
-
-        acc2_layout.addWidget(options_panel)
-
-        # ACC2 visualization widget
-        self.acc2_widget = ACCVisualizationWidget()
-        acc2_layout.addWidget(self.acc2_widget)
-
-        self.tab_widget.addTab(self.acc2_tab, "ACC2")
-
-        # Connect tab change to update button text
-        self.tab_widget.currentChanged.connect(self.on_tab_changed)
-
-        self.content_layout.addWidget(self.tab_widget)
-
-    def on_tab_changed(self, index):
-        """Update button text when tab changes"""
-        if index == 0:
-            self.generate_btn.setText("🎯 Generate ACC")
-        elif index == 1:
-            self.generate_btn.setText("🎯 Generate ACC2")
+        self.acc_widget.show_internal_nodes_cb = self.show_internal_nodes_cb
+        self.show_internal_nodes_cb.stateChanged.connect(self.acc_widget._on_toggle_internal_nodes)
+        self.content_layout.addWidget(self.acc_widget)
 
     def on_generate_clicked(self):
-        """Handle generate button click - generates based on current tab"""
+        """Handle generate button click"""
         main_window = self.window()
         if isinstance(main_window, MainWindow):
-            # Check which tab is currently active
-            current_tab = self.tab_widget.currentIndex()
-            if current_tab == 0:
-                # ACC tab
-                main_window.generate_acc()
-            elif current_tab == 1:
-                # ACC2 tab
-                main_window.generate_acc2()
+            main_window.generate_acc()
 
-    def on_show_log_clicked(self):
-        """Handle show log button click"""
+    def on_show_data_clicked(self):
+        """Handle show data button click"""
         main_window = self.window()
         if isinstance(main_window, MainWindow):
-            main_window.show_acc_log()
+            main_window.show_acc_data()
 
-    def on_acc2_options_changed(self):
-        """Handle ACC2 options change - update visualization in real-time"""
+    def on_diameter_changed(self):
+        """Handle diameter value change — re-render without rebuilding tree"""
         main_window = self.window()
         if isinstance(main_window, MainWindow):
-            # Only update if matrices are loaded
-            if not main_window.left_panel.local_matrix_widget.is_loaded():
-                return
-            if not main_window.left_panel.global_matrix_widget.is_loaded():
-                return
-
-            # Validate inputs
             try:
-                min_diameter = float(self.acc2_min_diameter.text())
-                max_diameter = float(self.acc2_max_diameter.text())
-                acc1_style = self.acc2_acc1_style.isChecked()
-                limit_angle = self.acc2_limit_angle.isChecked()
-                max_angle = float(self.acc2_max_angle.text()) if limit_angle else None
+                min_d = float(self.min_diameter.text()) if self.min_diameter.text().strip() else None
+                max_d = float(self.max_diameter.text()) if self.max_diameter.text().strip() else None
 
-                if min_diameter <= 0 or max_diameter <= 0:
-                    return  # Silently ignore invalid values during real-time updates
+                if min_d is not None and min_d <= 0:
+                    return
+                if max_d is not None and max_d <= 0:
+                    return
+                if min_d is not None and max_d is not None and min_d >= max_d:
+                    return
 
-                if min_diameter >= max_diameter:
-                    return  # Silently ignore invalid values during real-time updates
-
-                if limit_angle and max_angle is not None and max_angle <= 0:
-                    return  # Silently ignore invalid values during real-time updates
-
-                # Regenerate ACC2 with new parameters
-                main_window.generate_acc2_with_options(min_diameter, max_diameter, acc1_style, max_angle)
-
+                main_window.rerender_acc(min_d, max_d)
             except ValueError:
-                pass  # Silently ignore invalid values during real-time updates
+                pass
 
 
 class MainWindow(QMainWindow):
@@ -4296,7 +3904,7 @@ class MainWindow(QMainWindow):
         self.center_panel.global_dendro_widget.set_step(inc_step)
 
     def generate_acc(self):
-        """Generate ACC visualization"""
+        """Generate ACC visualization using tree-based algorithm"""
         try:
             # Check if both matrices are loaded
             if not self.left_panel.local_matrix_widget.is_loaded():
@@ -4324,6 +3932,28 @@ class MainWindow(QMainWindow):
             if not valid:
                 QMessageBox.warning(self, "Invalid Global Matrix", f"Global matrix validation failed:\n{msg}")
                 return
+
+            # Compute diversity from raw data panel
+            diversity = {}
+            for i in range(self.data_panel.tab_widget.count()):
+                table = self.data_panel._get_table_at(i)
+                if table is not None and hasattr(table, "get_data"):
+                    data = table.get_data()
+                    if data.get("areas") and data.get("matrix"):
+                        for idx, area in enumerate(data["areas"]):
+                            if idx < len(data["matrix"]):
+                                diversity[area] = diversity.get(area, 0) + sum(data["matrix"][idx])
+                        break  # use first valid sheet
+
+            # Read diameter settings
+            try:
+                min_d = float(self.right_panel.min_diameter.text()) if self.right_panel.min_diameter.text().strip() else None
+            except ValueError:
+                min_d = None
+            try:
+                max_d = float(self.right_panel.max_diameter.text()) if self.right_panel.max_diameter.text().strip() else None
+            except ValueError:
+                max_d = None
 
             # Setup log capture
             log_stream = StringIO()
@@ -4332,159 +3962,59 @@ class MainWindow(QMainWindow):
             log_formatter = logging.Formatter("%(levelname)s: %(message)s")
             log_handler.setFormatter(log_formatter)
 
-            # Get logger from acc_core_new (logger name is 'ACC_Iterative')
-            logger = logging.getLogger("ACC_Iterative")
-            original_level = logger.level
-            logger.setLevel(logging.INFO)
-            logger.addHandler(log_handler)
+            acc_logger = logging.getLogger("ACC_Tree")
+            original_level = acc_logger.level
+            acc_logger.setLevel(logging.INFO)
+            acc_logger.addHandler(log_handler)
 
             try:
-                # Run ACC algorithm step by step (NEW ITERATIVE ALGORITHM)
-                acc_steps = build_acc_from_matrices_iterative(local_matrix, global_matrix, unit=1.0, method="average")
+                root, acc_steps = build_acc_from_matrices_tree(
+                    local_matrix, global_matrix, unit=1.0, method="average",
+                    min_diameter=min_d, max_diameter=max_d, diversity=diversity,
+                )
+                # Cache tree root and merge_log for diameter re-rendering
+                self.acc_tree_root = root
+                self.acc_merge_log = root._merge_log
             finally:
-                # Remove handler and restore logger
-                logger.removeHandler(log_handler)
-                logger.setLevel(original_level)
-
-                # Save log
+                acc_logger.removeHandler(log_handler)
+                acc_logger.setLevel(original_level)
                 self.acc_log = log_stream.getvalue()
                 log_stream.close()
-
-                # Enable Show Log button
                 self.right_panel.show_log_btn.setEnabled(True)
 
             # Visualize with step controls
             self.right_panel.acc_widget.set_acc_steps(acc_steps)
 
-            # No message box - just silently complete
-            # Log info for debugging if needed
             if acc_steps:
                 final_step = acc_steps[-1]
                 clusters = final_step["clusters"]
                 if clusters:
                     cluster = clusters[0]
                     logger.info("[ACC] Generated: %d steps, %d members", len(acc_steps), len(cluster["members"]))
-                else:
-                    logger.warning("[ACC] No clusters found")
-            else:
-                logger.warning("[ACC] No steps generated")
 
         except Exception as e:
             QMessageBox.critical(self, "Error", f"Failed to generate visualization:\n{str(e)}")
             logger.debug("generate visualization traceback", exc_info=True)
 
-    def generate_acc2(self):
-        """Generate ACC2 visualization with default parameters"""
-        # Get default min/max diameter from UI
+    def rerender_acc(self, min_diameter, max_diameter):
+        """Re-render ACC with new diameter settings (no tree rebuild)"""
+        if not hasattr(self, "acc_tree_root") or self.acc_tree_root is None:
+            return
+        if not hasattr(self, "acc_merge_log"):
+            return
+
         try:
-            min_diameter = float(self.right_panel.acc2_min_diameter.text())
-            max_diameter = float(self.right_panel.acc2_max_diameter.text())
-            acc1_style = self.right_panel.acc2_acc1_style.isChecked()
-            limit_angle = self.right_panel.acc2_limit_angle.isChecked()
-            max_angle = float(self.right_panel.acc2_max_angle.text()) if limit_angle else None
-        except (ValueError, AttributeError):
-            min_diameter = 1.0
-            max_diameter = 2.0
-            acc1_style = False
-            max_angle = None
-
-        self.generate_acc2_with_options(min_diameter, max_diameter, acc1_style, max_angle)
-
-    def generate_acc2_with_options(self, min_diameter, max_diameter, acc1_style=False, max_angle=None):
-        """Generate ACC2 visualization with custom diameter range and optional angle limit"""
-        try:
-            # Check if both matrices are loaded
-            if not self.left_panel.local_matrix_widget.is_loaded():
-                QMessageBox.warning(self, "Missing Data", "Please load the Local Similarity Matrix first")
-                return
-
-            if not self.left_panel.global_matrix_widget.is_loaded():
-                QMessageBox.warning(self, "Missing Data", "Please load the Global Similarity Matrix first")
-                return
-
-            # Get original matrices (not step matrices)
-            local_df = self.left_panel.local_matrix_widget.get_dataframe()
-            global_df = self.left_panel.global_matrix_widget.get_dataframe()
-
-            local_matrix = dict_matrix_from_dataframe(local_df)
-            global_matrix = dict_matrix_from_dataframe(global_df)
-
-            # Validate matrices
-            valid, msg = validate_similarity_matrix(local_matrix)
-            if not valid:
-                QMessageBox.warning(self, "Invalid Local Matrix", f"Local matrix validation failed:\n{msg}")
-                return
-
-            valid, msg = validate_similarity_matrix(global_matrix)
-            if not valid:
-                QMessageBox.warning(self, "Invalid Global Matrix", f"Global matrix validation failed:\n{msg}")
-                return
-
-            # Build ACC2 with parameters (including optional angle limit)
-            acc2_data = build_acc2(local_matrix, global_matrix, unit=1.0, max_angle=max_angle)
-
-            # Store ACC2 data for future option updates
-            self.acc2_data = acc2_data
-
-            # Convert diameter inputs to radius (circles are stored as radii)
-            min_radius = min_diameter / 2.0
-            max_radius = max_diameter / 2.0
-
-            # Scale circles to fit min/max radius range
-            # Original circles are in radius units
-            original_min = min(acc2_data["circles"])
-            original_max = max(acc2_data["circles"])
-            original_range = original_max - original_min
-
-            if original_range > 0:
-                # Scale circles (radii)
-                new_range = max_radius - min_radius
-                scaled_circles = []
-                for r in acc2_data["circles"]:
-                    scaled_r = min_radius + (r - original_min) / original_range * new_range
-                    scaled_circles.append(scaled_r)
-                acc2_data["circles"] = scaled_circles
-
-                # Scale merge point radii
-                for cluster_id, mp in acc2_data["merge_points"].items():
-                    old_r = mp["radius"]
-                    new_r = min_radius + (old_r - original_min) / original_range * new_range
-                    acc2_data["merge_points"][cluster_id]["radius"] = new_r
-
-                # Scale level radii
-                for level in acc2_data["levels"]:
-                    old_r = level["radius"]
-                    new_r = min_radius + (old_r - original_min) / original_range * new_range
-                    level["radius"] = new_r
-
-                # Scale area positions (all areas at innermost circle)
-                for area, pos in acc2_data["positions"].items():
-                    old_r = pos["radius"]
-                    new_r = min_radius + (old_r - original_min) / original_range * new_range
-                    # Update radius
-                    acc2_data["positions"][area]["radius"] = new_r
-                    # Recalculate x, y from new radius and existing angle (using compass convention)
-                    new_x, new_y = compass_to_cart(new_r, pos["angle"])
-                    acc2_data["positions"][area]["x"] = new_x
-                    acc2_data["positions"][area]["y"] = new_y
-
-            # Visualize ACC2 in the ACC2 tab
-            # ACC1 style will be applied inside plot_acc2
-            self.right_panel.acc2_widget.plot_acc2(acc2_data, acc1_style=acc1_style)
-
-            # No message box - just silently complete
-            angle_info = f", max angle: {max_angle}°" if max_angle else ""
-            logger.info(
-                "[ACC2] Generated: %d areas, diameter range: %.1f-%.1f%s",
-                len(acc2_data["positions"]),
-                min_diameter,
-                max_diameter,
-                angle_info,
+            steps = rerender_acc_tree(
+                self.acc_tree_root, self.acc_merge_log,
+                min_diameter=min_diameter, max_diameter=max_diameter,
             )
-
+            current_step = self.right_panel.acc_widget.current_step
+            self.right_panel.acc_widget.set_acc_steps(steps)
+            # Restore step position
+            if current_step < len(steps):
+                self.right_panel.acc_widget.step_slider.setValue(current_step)
         except Exception as e:
-            QMessageBox.critical(self, "Error", f"Failed to generate ACC2 visualization:\n{str(e)}")
-            logger.debug("ACC2 visualization traceback", exc_info=True)
+            logger.warning("Re-render failed: %s", e)
 
     def run_nmds(self):
         """Run NMDS based on selected matrix type"""
@@ -4523,17 +4053,30 @@ class MainWindow(QMainWindow):
             QMessageBox.critical(self, "Error", f"Failed to run NMDS:\n{str(e)}")
             logger.debug("NMDS traceback", exc_info=True)
 
-    def show_acc_log(self):
-        """Show ACC generation log in a dialog"""
-        if not self.acc_log:
+    def show_acc_data(self):
+        """Show ACC tree structure data in a dialog"""
+        from acc_core_tree import _make_radius_fn
+
+        if not hasattr(self, "acc_tree_root") or self.acc_tree_root is None:
             QMessageBox.information(
-                self, "No Log Available", "No ACC generation log is available.\nPlease generate ACC first."
+                self, "No Data Available", "No ACC tree data is available.\nPlease generate ACC first."
             )
             return
 
-        # Show log in dialog
-        log_dialog = LogViewerDialog(self.acc_log, self)
-        log_dialog.exec_()
+        try:
+            min_d = float(self.right_panel.min_diameter.text()) if self.right_panel.min_diameter.text().strip() else None
+        except ValueError:
+            min_d = None
+        try:
+            max_d = float(self.right_panel.max_diameter.text()) if self.right_panel.max_diameter.text().strip() else None
+        except ValueError:
+            max_d = None
+
+        radius_fn = _make_radius_fn(min_d, max_d)
+        text = _format_acc_tree(self.acc_tree_root, radius_fn)
+        dialog = LogViewerDialog(text, self)
+        dialog.setWindowTitle("ACC Tree Structure")
+        dialog.exec_()
 
 
 def main():

@@ -339,6 +339,51 @@ def build_acc_from_matrices_iterative(local_matrix, global_matrix, unit=1.0, met
     return steps
 
 
+def build_acc_from_matrices_tree(local_matrix, global_matrix, unit=1.0, method="average",
+                                  min_diameter=None, max_diameter=None, diversity=None):
+    """
+    Build ACC using tree-based algorithm.
+
+    Args:
+        local_matrix: local similarity matrix (dict of dict)
+        global_matrix: global similarity matrix (dict of dict)
+        unit: unit parameter for diameter calculation
+        method: linkage method for cluster similarity calculation
+        min_diameter: optional min diameter for scaling
+        max_diameter: optional max diameter for scaling
+        diversity: optional dict mapping area name → present taxa count
+
+    Returns:
+        (root, steps): ACCNode tree root and list of step dicts
+    """
+    from acc_core_tree import build_acc_from_tree
+
+    return build_acc_from_tree(
+        local_matrix, global_matrix, unit=unit, method=method,
+        min_diameter=min_diameter, max_diameter=max_diameter,
+        diversity=diversity,
+    )
+
+
+def rerender_acc_tree(root, merge_log, min_diameter=None, max_diameter=None):
+    """
+    Re-render an existing ACC tree with new diameter settings.
+
+    Args:
+        root: ACCNode tree root (from build_acc_from_matrices_tree)
+        merge_log: merge log from tree building
+        min_diameter: target min diameter
+        max_diameter: target max diameter
+
+    Returns:
+        steps: list of step dicts for GUI
+    """
+    from acc_core_tree import generate_steps, render_tree
+
+    render_tree(root, min_diameter=min_diameter, max_diameter=max_diameter)
+    return generate_steps(root, merge_log, min_diameter=min_diameter, max_diameter=max_diameter)
+
+
 def jaccard_similarity_from_presence(areas, taxa, matrix):
     """
     Calculate Jaccard similarity matrix from presence/absence data.

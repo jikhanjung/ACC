@@ -2,6 +2,10 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## Quick Start
+
+**새 세션 시작 시 반드시 `HANDOFF.md`를 먼저 읽을 것.** 현재 프로젝트 상태, 진행 중인 작업, 다음 단계가 정리되어 있음.
+
 ## Project Overview
 
 ACC (Adaptive Cluster Circle) is a Python-based algorithm for visualizing hierarchical cluster relationships using circular diagrams. The algorithm combines similarity information from two types of dendrograms (local and global) to create 2D geometric representations of cluster relationships.
@@ -93,7 +97,7 @@ Modify the `if __name__ == "__main__":` block in `acc_core.py` to provide your o
 
 ## Potential Extensions
 
-Implemented in v0.0.5:
+Implemented in v0.0.6:
 - ~~Visualization using matplotlib or svgwrite~~ → Matplotlib-based GUI (acc_gui.py)
 - ~~Export to CSV/JSON for external visualization tools~~ → .accdata JSON project files, PNG/PDF/SVG export
 - ~~Performance optimization with NumPy for large datasets~~ → NumPy/SciPy integration
@@ -105,9 +109,21 @@ Future extensions:
 - Batch processing for multiple datasets
 - Additional clustering methods beyond UPGMA
 
+## Phase 완료 시 필수 작업
+
+**매 Phase 완료 후 반드시 아래 3가지를 수행할 것:**
+
+1. **devlog 기록**: `devlog/YYYYMMDD_NNN_제목.md` 작성
+   - 작업 내용, 변경 파일, 테스트 결과 포함
+2. **HANDOFF.md 갱신**: 완료된 작업, 현재 상태, 다음 단계 반영
+3. **README.md 갱신** (해당 시): 사용자가 알아야 할 새 기능이 있으면 반영
+
+이 3가지를 별도 커밋으로 기록 (코드 커밋과 분리).
+
 ## Documentation
 
 For more detailed information, refer to:
+- **Handover Document**: [HANDOFF.md](HANDOFF.md) - 프로젝트 현황 인수인계 (필독)
 - **Algorithm Details**: [doc/ACC_Algorithm_Overview.md](doc/ACC_Algorithm_Overview.md)
 - **User Manual**: [doc/USER_MANUAL.md](doc/USER_MANUAL.md)
 - **Development Guide**: [doc/development.md](doc/development.md)

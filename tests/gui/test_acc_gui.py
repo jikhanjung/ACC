@@ -15,47 +15,6 @@ pytestmark = pytest.mark.gui
 
 
 # ---------------------------------------------------------------------------
-# compass_to_cart utility tests
-# ---------------------------------------------------------------------------
-
-
-class TestCompassToCart:
-    """Test the compass_to_cart(r, angle_deg) function"""
-
-    def test_north(self):
-        """0° (north) should point upward: (0, r)"""
-        from acc_gui import compass_to_cart
-
-        x, y = compass_to_cart(1.0, 0)
-        assert abs(x) < 1e-10
-        assert abs(y - 1.0) < 1e-10
-
-    def test_east(self):
-        """90° (east) should point right: (r, 0)"""
-        from acc_gui import compass_to_cart
-
-        x, y = compass_to_cart(1.0, 90)
-        assert abs(x - 1.0) < 1e-10
-        assert abs(y) < 1e-10
-
-    def test_south(self):
-        """180° (south) should point downward: (0, -r)"""
-        from acc_gui import compass_to_cart
-
-        x, y = compass_to_cart(1.0, 180)
-        assert abs(x) < 1e-10
-        assert abs(y - (-1.0)) < 1e-10
-
-    def test_west(self):
-        """270° (west) should point left: (-r, 0)"""
-        from acc_gui import compass_to_cart
-
-        x, y = compass_to_cart(1.0, 270)
-        assert abs(x - (-1.0)) < 1e-10
-        assert abs(y) < 1e-10
-
-
-# ---------------------------------------------------------------------------
 # get_resource_path tests
 # ---------------------------------------------------------------------------
 
@@ -148,23 +107,6 @@ class TestCodeQuality:
         import logging
 
         assert isinstance(acc_gui.logger, logging.Logger)
-
-    def test_refactored_methods_exist(self):
-        """ACCVisualizationWidget should have the refactored private methods"""
-        from acc_gui import ACCVisualizationWidget
-
-        expected_methods = [
-            "_apply_acc1_style",
-            "_draw_concentric_circles",
-            "_draw_arc_lines",
-            "_draw_radial_lines",
-            "_draw_area_points",
-            "_draw_merge_points",
-            "_setup_plot_decorations",
-            "_setup_interactivity",
-        ]
-        for method_name in expected_methods:
-            assert hasattr(ACCVisualizationWidget, method_name), f"Missing method: {method_name}"
 
     def test_no_bare_except(self):
         """acc_gui.py should not contain bare except clauses"""

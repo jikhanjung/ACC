@@ -341,8 +341,8 @@ python build.py
 **릴리스 프로세스**:
 ```bash
 # 버전 태그 생성
-git tag v0.0.5
-git push origin v0.0.5
+git tag v0.0.6
+git push origin v0.0.6
 
 # → GitHub Actions가 자동으로:
 #    1. 테스트 실행
@@ -408,7 +408,7 @@ in the Software without restriction...
 
 ## 📊 프로젝트 상태
 
-- **버전**: 0.0.5
+- **버전**: 0.0.6
 - **Python**: 3.11, 3.12
 - **테스트**: [![Tests](https://github.com/jikhanjung/ACC/workflows/Tests/badge.svg)](https://github.com/jikhanjung/ACC/actions)
 - **커버리지**: [![codecov](https://codecov.io/gh/jikhanjung/ACC/branch/main/graph/badge.svg)](https://codecov.io/gh/jikhanjung/ACC)

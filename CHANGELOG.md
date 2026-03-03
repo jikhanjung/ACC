@@ -7,18 +7,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.0.6] - 2026-03-03
+
+### Added
+- Tree-based ACC algorithm (`acc_core_tree.py`): ACCNode dataclass with explicit binary tree structure
+  - Build/Render separation: diameter changes recompute coordinates without rebuilding tree
+  - Diversity index for area ordering (left/right) based on present taxa count
+  - `build_acc_tree()`, `render_tree()`, `generate_steps()`, `build_acc_from_tree()` API
+- Min/Max Diameter controls in ACC panel for interactive diameter scaling
+- Tree algorithm wrappers in `acc_utils.py`: `build_acc_from_matrices_tree()`, `rerender_acc_tree()`
+- Unit tests for tree module: `test_acc_core_tree.py` (35 tests)
+- GUI test suite: `tests/gui/test_acc_gui.py` (13 tests covering utilities, widget smoke tests, code quality checks)
+- `QApplication` session fixture in `tests/conftest.py` for GUI tests
+- Module-level `logger` in acc_gui.py with `logging.basicConfig()` in `main()`
+
 ### Changed
+- ACC panel now uses tree-based algorithm (`acc_core_tree.py`) instead of `acc_core_new.py`
 - Magic numbers replaced with named constants: `THETA_MAX_DEGREES` (acc_core.py, acc_core_new.py), `DEFAULT_SIMILARITY` (acc_core_new.py)
 - All `print()` statements in acc_gui.py converted to `logging` module calls
 - Bare `except:` clause replaced with `except (ValueError, AttributeError):` in acc_gui.py
-- `plot_acc2()` method (356 lines) refactored into 8 focused private methods
-- `import copy` moved from inline to module-level import in acc_gui.py
 - `E722` rule removed from ruff ignore list (no longer needed)
 
-### Added
-- Module-level `logger` in acc_gui.py with `logging.basicConfig()` in `main()`
-- GUI test suite: `tests/gui/test_acc_gui.py` (13 tests covering utilities, widget smoke tests, code quality checks)
-- `QApplication` session fixture in `tests/conftest.py` for GUI tests
+### Removed
+- ACC2 tab and all related code (~420 lines removed from acc_gui.py)
+  - `plot_acc2()` and 10 related private methods in ACCVisualizationWidget
+  - `generate_acc2()`, `generate_acc2_with_options()`, `on_tab_changed()`, `on_acc2_options_changed()`
+  - `compass_to_cart()` utility function
+  - `from acc_core_acc2 import ...` imports
 
 ## [0.0.5] - 2026-02-26
 
