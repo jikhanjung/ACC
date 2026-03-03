@@ -384,6 +384,75 @@ def rerender_acc_tree(root, merge_log, min_diameter=None, max_diameter=None):
     return generate_steps(root, merge_log, min_diameter=min_diameter, max_diameter=max_diameter)
 
 
+def build_acc_paper(local_matrix, global_matrix, unit=1.0, method="average",
+                    min_diameter=None, max_diameter=None, diversity=None):
+    """
+    Build ACC using the paper algorithm (4-step incremental procedure).
+
+    Uses the same tree as build_acc_from_matrices_tree, but renders coordinates
+    using the paper's incremental angular/diameter logic.
+
+    Args:
+        local_matrix: local similarity matrix (dict of dict)
+        global_matrix: global similarity matrix (dict of dict)
+        unit: unit parameter for diameter calculation
+        method: linkage method for cluster similarity calculation
+        min_diameter: optional min diameter for scaling
+        max_diameter: optional max diameter for scaling
+        diversity: optional dict mapping area name → present taxa count
+
+    Returns:
+        (root, steps): ACCNode tree root and list of step dicts
+    """
+    from acc_core_tree import _make_radius_fn, build_acc_tree
+    from acc_render_paper import render_paper
+
+    root, merge_log = build_acc_tree(
+        local_matrix, global_matrix, unit=unit, method=method, diversity=diversity,
+    )
+    root._merge_log = merge_log
+
+    radius_fn = _make_radius_fn(min_diameter, max_diameter)
+    steps, cached_steps = render_paper(
+        root, merge_log, local_matrix, global_matrix, radius_fn,
+        diversity or {},
+    )
+    root._cached_steps = cached_steps
+    root._local_matrix = local_matrix
+    root._global_matrix = global_matrix
+    root._diversity = diversity or {}
+
+    return root, steps
+
+
+def rerender_acc_paper(root, merge_log, cached_steps, local_matrix, global_matrix,
+                       diversity, min_diameter=None, max_diameter=None):
+    """
+    Re-render paper algorithm with new diameter settings (no tree rebuild).
+
+    Args:
+        root: ACCNode tree root
+        merge_log: merge log from tree building
+        cached_steps: cached rendering decisions from previous render
+        local_matrix: local similarity matrix
+        global_matrix: global similarity matrix
+        diversity: dict mapping area name → present taxa count
+        min_diameter: target min diameter
+        max_diameter: target max diameter
+
+    Returns:
+        steps: list of step dicts for GUI
+    """
+    from acc_core_tree import _make_radius_fn
+    from acc_render_paper import rerender_paper
+
+    radius_fn = _make_radius_fn(min_diameter, max_diameter)
+    return rerender_paper(
+        root, merge_log, cached_steps, local_matrix, global_matrix,
+        radius_fn, diversity,
+    )
+
+
 def jaccard_similarity_from_presence(areas, taxa, matrix):
     """
     Calculate Jaccard similarity matrix from presence/absence data.

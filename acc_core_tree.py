@@ -161,15 +161,18 @@ def _determine_order(node_a, node_b, local_matrix, _diversity=None):
 # ────────────────────────────────────────────────────────────
 # Tree building
 # ────────────────────────────────────────────────────────────
-def build_acc_tree(local_matrix, global_matrix, unit=1.0, method="average",
+def build_acc_tree(local_matrix, global_matrix, unit=1.0, method="weighted",
                    diversity=None):
-    """Build an ACCNode tree using greedy agglomeration.
+    """Build an ACCNode tree using greedy agglomeration (WPGMA).
+
+    Uses simple /2 averaging at each merge (WPGMA), matching the dendrogram
+    display in the GUI (ClusteringStepManager with method='weighted').
 
     Args:
         local_matrix: dict-of-dict local similarity matrix.
         global_matrix: dict-of-dict global similarity matrix.
         unit: diameter scaling factor.
-        method: linkage method (currently only 'average' is used).
+        method: kept for API compatibility (always uses WPGMA).
         diversity: dict mapping area name → int (present taxa count).
                    If None, all areas get diversity=0.
 
@@ -189,40 +192,48 @@ def build_acc_tree(local_matrix, global_matrix, unit=1.0, method="average",
         )
         active_nodes.append(node)
 
+    # Initialise WPGMA similarity caches with leaf-level pairwise values.
+    # Keys are frozenset pairs so order doesn't matter.
+    local_cache: dict[tuple, float] = {}
+    global_cache: dict[tuple, float] = {}
+    for i, na in enumerate(active_nodes):
+        for j, nb in enumerate(active_nodes):
+            if i == j:
+                continue
+            a = next(iter(na.members))
+            b = next(iter(nb.members))
+            key = (frozenset(na.members), frozenset(nb.members))
+            ls = get_similarity(local_matrix, a, b)
+            gs = get_similarity(global_matrix, a, b)
+            local_cache[key] = ls if ls is not None else DEFAULT_SIMILARITY
+            global_cache[key] = gs if gs is not None else DEFAULT_SIMILARITY
+
+    def _get(cache, fa, fb):
+        return cache.get((fa, fb), cache.get((fb, fa), DEFAULT_SIMILARITY))
+
     merge_log: list[tuple[int, ACCNode]] = []
     merge_counter = 0
 
     while len(active_nodes) > 1:
-        # Find the pair with highest local similarity (greedy)
+        # Find the pair with highest WPGMA local similarity.
         best_sim = -1.0
         best_i, best_j = 0, 1
         for i in range(len(active_nodes)):
             for j in range(i + 1, len(active_nodes)):
-                # Max pairwise similarity between any members of the two nodes
-                for m1 in active_nodes[i].members:
-                    for m2 in active_nodes[j].members:
-                        sim = get_similarity(local_matrix, m1, m2)
-                        if sim is not None and sim > best_sim:
-                            best_sim = sim
-                            best_i, best_j = i, j
+                fa = frozenset(active_nodes[i].members)
+                fb = frozenset(active_nodes[j].members)
+                sim = _get(local_cache, fa, fb)
+                if sim > best_sim:
+                    best_sim = sim
+                    best_i, best_j = i, j
 
         node_a = active_nodes[best_i]
         node_b = active_nodes[best_j]
+        fa = frozenset(node_a.members)
+        fb = frozenset(node_b.members)
 
-        # Calculate linkage similarities (average linkage)
-        sims_local = []
-        sims_global = []
-        for m1 in node_a.members:
-            for m2 in node_b.members:
-                ls = get_similarity(local_matrix, m1, m2)
-                gs = get_similarity(global_matrix, m1, m2)
-                if ls is not None:
-                    sims_local.append(ls)
-                if gs is not None:
-                    sims_global.append(gs)
-
-        new_local_sim = sum(sims_local) / len(sims_local) if sims_local else DEFAULT_SIMILARITY
-        new_global_sim = sum(sims_global) / len(sims_global) if sims_global else DEFAULT_SIMILARITY
+        new_local_sim = _get(local_cache, fa, fb)
+        new_global_sim = _get(global_cache, fa, fb)
 
         # Geometry
         new_diameter = unit / new_global_sim if new_global_sim > 0 else unit * 100
@@ -242,11 +253,24 @@ def build_acc_tree(local_matrix, global_matrix, unit=1.0, method="average",
             merge_order=merge_counter,
         )
 
+        # Update WPGMA caches for the new merged node with every remaining node.
+        # WPGMA recurrence: sim(A∪B, C) = (sim(A, C) + sim(B, C)) / 2
+        new_members = frozenset(parent.members)
+        for node_c in active_nodes:
+            if node_c is node_a or node_c is node_b:
+                continue
+            fc = frozenset(node_c.members)
+            new_ls = (_get(local_cache, fa, fc) + _get(local_cache, fb, fc)) / 2.0
+            new_gs = (_get(global_cache, fa, fc) + _get(global_cache, fb, fc)) / 2.0
+            local_cache[(new_members, fc)] = new_ls
+            local_cache[(fc, new_members)] = new_ls
+            global_cache[(new_members, fc)] = new_gs
+            global_cache[(fc, new_members)] = new_gs
+
         merge_log.append((merge_counter, parent))
         merge_counter += 1
 
         # Remove old, add new
-        # Remove higher index first
         if best_i < best_j:
             del active_nodes[best_j]
             del active_nodes[best_i]

@@ -66,11 +66,13 @@ from scipy.cluster.hierarchy import dendrogram
 
 from acc_utils import (
     build_acc_from_matrices_tree,
+    build_acc_paper,
     dict_matrix_from_dataframe,
+    rerender_acc_paper,
     rerender_acc_tree,
     validate_similarity_matrix,
 )
-from clustering_steps import ClusteringStepManager
+from clustering_steps import ClusteringStepManager, EnforcedClusteringStepManager
 
 logger = logging.getLogger(__name__)
 
@@ -979,6 +981,28 @@ class StepMatrixWidget(QWidget):
         """Get the step manager"""
         return self.step_manager
 
+    def set_enforced_step_manager(self, enforced_mgr):
+        """Replace the step manager with an enforced-topology manager."""
+        if not hasattr(self, "_original_step_manager"):
+            self._original_step_manager = self.step_manager
+        self.step_manager = enforced_mgr
+        num_steps = enforced_mgr.get_num_steps()
+        self.step_slider.setMaximum(num_steps - 1)
+        self.current_step = min(self.current_step, num_steps - 1)
+        self.step_slider.setValue(self.current_step)
+        self.update_step_display()
+
+    def restore_step_manager(self):
+        """Restore the original step manager."""
+        if hasattr(self, "_original_step_manager") and self._original_step_manager is not None:
+            self.step_manager = self._original_step_manager
+            del self._original_step_manager
+            num_steps = self.step_manager.get_num_steps()
+            self.step_slider.setMaximum(num_steps - 1)
+            self.current_step = min(self.current_step, num_steps - 1)
+            self.step_slider.setValue(self.current_step)
+            self.update_step_display()
+
     def get_current_step(self):
         """Get current step number"""
         return self.current_step
@@ -1106,6 +1130,36 @@ class StepMatrixWidget(QWidget):
         return []
 
 
+def _build_enforced_linkage(local_linkage, local_labels, global_matrix_dict):
+    """Local topology의 병합 순서를 그대로 따르되,
+    각 병합 지점의 distance를 global similarity 기반으로 교체한 linkage 반환.
+
+    Returns:
+        (custom_linkage, max_sim=1.0)
+    """
+    n = len(local_labels)
+    cluster_members = {i: {local_labels[i]} for i in range(n)}
+    custom_linkage = local_linkage.copy().astype(float)
+
+    for k in range(n - 1):
+        ci, cj = int(local_linkage[k, 0]), int(local_linkage[k, 1])
+        members_i = cluster_members[ci]
+        members_j = cluster_members[cj]
+        cross_sims = []
+        for mi in members_i:
+            for mj in members_j:
+                sim = (global_matrix_dict.get(mi) or {}).get(mj)
+                if sim is None:
+                    sim = (global_matrix_dict.get(mj) or {}).get(mi)
+                if sim is not None:
+                    cross_sims.append(sim)
+        global_sim = sum(cross_sims) / len(cross_sims) if cross_sims else 0.5
+        custom_linkage[k, 2] = 1.0 - global_sim
+        cluster_members[n + k] = members_i | members_j
+
+    return custom_linkage, 1.0
+
+
 class StepDendrogramWidget(QWidget):
     """Widget for displaying dendrogram with step visualization"""
 
@@ -1114,6 +1168,8 @@ class StepDendrogramWidget(QWidget):
         self.title = title
         self.step_manager = None
         self.current_step = 0
+        self._enforced_linkage = None
+        self._enforced_max_sim = 1.0
         self.init_ui()
 
     def init_ui(self):
@@ -1129,6 +1185,17 @@ class StepDendrogramWidget(QWidget):
         self.show_values_checkbox.setStyleSheet("font-size: 10px;")
         self.show_values_checkbox.stateChanged.connect(self.on_checkbox_changed)
         header_layout.addWidget(self.show_values_checkbox)
+
+        self.enforce_topology_checkbox = None
+        if self.title == "Global":
+            self.enforce_topology_checkbox = QCheckBox("Enforce local topology")
+            self.enforce_topology_checkbox.setStyleSheet("font-size: 10px;")
+            self.enforce_topology_checkbox.setToolTip(
+                "Show global similarity values using local dendrogram topology"
+            )
+            self.enforce_topology_checkbox.stateChanged.connect(self.on_checkbox_changed)
+            header_layout.addWidget(self.enforce_topology_checkbox)
+
         layout.addLayout(header_layout)
 
         # Matplotlib figure
@@ -1177,6 +1244,12 @@ class StepDendrogramWidget(QWidget):
 
     def on_checkbox_changed(self):
         """Called when checkbox state changes"""
+        self.update_dendrogram()
+
+    def set_enforced_linkage(self, linkage, max_sim=1.0):
+        """Set the enforced linkage (local topology + global distances) for display."""
+        self._enforced_linkage = linkage
+        self._enforced_max_sim = max_sim
         self.update_dendrogram()
 
     def set_step_manager(self, step_manager):
@@ -1236,6 +1309,14 @@ class StepDendrogramWidget(QWidget):
             # Draw full dendrogram with partial highlighting
             try:
                 full_linkage = self.step_manager.linkage_matrix
+                max_sim = self.step_manager.max_sim
+                if (
+                    self.enforce_topology_checkbox is not None
+                    and self.enforce_topology_checkbox.isChecked()
+                    and self._enforced_linkage is not None
+                ):
+                    full_linkage = self._enforced_linkage
+                    max_sim = self._enforced_max_sim
 
                 # Create custom color function to highlight completed steps
                 def link_color_func(k):
@@ -1275,8 +1356,6 @@ class StepDendrogramWidget(QWidget):
                     ax.legend(fontsize=8)
 
                 # Convert X-axis labels from distance to similarity
-                max_sim = self.step_manager.max_sim
-
                 # Get current x-tick locations (distance values)
                 xticks = ax.get_xticks()
 
@@ -1668,14 +1747,68 @@ class ACCVisualizationWidget(QWidget):
         # Collect leaf node data for hover
         self._leaf_node_data = []
         for cluster in clusters:
+            members = cluster.get("members", set())
             diversity_map = cluster.get("diversity", {})
-            for member, (x, y, _r) in all_points.items():
-                if member in cluster.get("members", set()):
-                    self._leaf_node_data.append({
-                        "name": member,
-                        "position": (x, y),
-                        "diversity": diversity_map.get(member, 0),
-                    })
+            sim_local = cluster.get("local_sim", 0.0)
+            sim_global = cluster.get("global_sim", 0.0)
+
+            # Positions of all members in this cluster
+            cluster_points = {
+                m: (x, y) for m, (x, y, _r) in all_points.items() if m in members
+            }
+            if not cluster_points:
+                continue
+
+            if len(cluster_points) == 1:
+                member, (x, y) = next(iter(cluster_points.items()))
+                r = math.sqrt(x**2 + y**2)
+                self._leaf_node_data.append({
+                    "name": member,
+                    "position": (x, y),
+                    "diversity": diversity_map.get(member, 0),
+                    "diameter": r * 2,
+                    "sim_local": sim_local,
+                    "sim_global": sim_global,
+                    "neighbors": {},
+                })
+                continue
+
+            # Sort members by angular position (atan2) to find sequence order
+            sorted_members = sorted(
+                cluster_points.keys(),
+                key=lambda m: math.atan2(cluster_points[m][1], cluster_points[m][0]),
+            )
+
+            for i, member in enumerate(sorted_members):
+                x, y = cluster_points[member]
+                r = math.sqrt(x**2 + y**2)
+
+                # Angular separation to immediate neighbors in the sequence
+                neighbors = {}
+                if i > 0:
+                    prev_m = sorted_members[i - 1]
+                    px, py = cluster_points[prev_m]
+                    delta = math.degrees(
+                        math.atan2(y, x) - math.atan2(py, px)
+                    ) % 360
+                    neighbors[prev_m] = min(delta, 360 - delta)
+                if i < len(sorted_members) - 1:
+                    next_m = sorted_members[i + 1]
+                    nx, ny = cluster_points[next_m]
+                    delta = math.degrees(
+                        math.atan2(ny, nx) - math.atan2(y, x)
+                    ) % 360
+                    neighbors[next_m] = min(delta, 360 - delta)
+
+                self._leaf_node_data.append({
+                    "name": member,
+                    "position": (x, y),
+                    "diversity": diversity_map.get(member, 0),
+                    "diameter": r * 2,
+                    "sim_local": sim_local,
+                    "sim_global": sim_global,
+                    "neighbors": neighbors,
+                })
 
         # Connect hover event (disconnect previous if any)
         if self._hover_cid is not None:
@@ -1744,10 +1877,18 @@ class ACCVisualizationWidget(QWidget):
                 f"Merge Step: {node_data['merge_order']}"
             )
         else:
-            text = (
-                f"Area: {node_data['name']}\n"
-                f"Diversity: {node_data['diversity']}"
-            )
+            lines = [
+                f"Area:       {node_data['name']}",
+                f"Diameter:   {node_data['diameter']:.3f}",
+            ]
+            for nb_name, nb_angle in node_data.get("neighbors", {}).items():
+                lines.append(f"Angle→{nb_name}:  {nb_angle:.1f}°")
+            lines += [
+                f"Sim_local:  {node_data['sim_local']:.3f}",
+                f"Sim_global: {node_data['sim_global']:.3f}",
+                f"Diversity:  {node_data['diversity']}",
+            ]
+            text = "\n".join(lines)
         if self._hover_annotation is None:
             self._hover_annotation = ax.annotate(
                 text, xy=(ix, iy), xytext=(20, 20),
@@ -3727,7 +3868,7 @@ class RightPanel(ColumnPanel):
         diameter_layout.addWidget(self.min_diameter)
 
         diameter_layout.addWidget(QLabel("Max Dia."))
-        self.max_diameter = QLineEdit("6")
+        self.max_diameter = QLineEdit("11")
         self.max_diameter.setFixedWidth(30)
         self.max_diameter.setStyleSheet(lineedit_style)
         self.max_diameter.setToolTip("Maximum circle diameter (similarity≈0)")
@@ -3737,6 +3878,13 @@ class RightPanel(ColumnPanel):
         self.show_internal_nodes_cb = QCheckBox("Nodes")
         self.show_internal_nodes_cb.setChecked(False)
         diameter_layout.addWidget(self.show_internal_nodes_cb)
+
+        diameter_layout.addWidget(QLabel("Algo."))
+        self.algorithm_combo = QComboBox()
+        self.algorithm_combo.addItems(["Paper", "Tree"])
+        self.algorithm_combo.setFixedWidth(60)
+        self.algorithm_combo.setToolTip("Tree: recursive angle splitting\nPaper: 4-step incremental procedure")
+        diameter_layout.addWidget(self.algorithm_combo)
 
         diameter_layout.addStretch()
         self.content_layout.addWidget(diameter_panel)
@@ -3857,6 +4005,11 @@ class MainWindow(QMainWindow):
             toolbar.addAction(action)
             self.panel_actions.append(action)
 
+        # Connect enforce topology checkbox signal
+        self.center_panel.global_dendro_widget.enforce_topology_checkbox.stateChanged.connect(
+            self._on_enforce_topology_changed
+        )
+
     def toggle_panel(self, index, visible):
         """Show or hide a panel in the splitter by index."""
         self.splitter.widget(index).setVisible(visible)
@@ -3907,6 +4060,35 @@ class MainWindow(QMainWindow):
         # Update global
         inc_step = self.left_panel.global_matrix_widget.get_current_step()
         self.center_panel.global_dendro_widget.set_step(inc_step)
+
+    def _on_enforce_topology_changed(self, state):
+        """Handle 'Enforce local topology' checkbox state change on the Global dendrogram."""
+        global_dendro = self.center_panel.global_dendro_widget
+        global_matrix_widget = self.left_panel.global_matrix_widget
+        if state == Qt.Checked:
+            local_mgr = self.center_panel.local_dendro_widget.step_manager
+            if local_mgr is None:
+                global_dendro.enforce_topology_checkbox.setChecked(False)
+                return
+            global_df = global_matrix_widget.get_dataframe()
+            if global_df is None:
+                global_dendro.enforce_topology_checkbox.setChecked(False)
+                return
+            enforced_mgr = EnforcedClusteringStepManager(
+                global_df.values.astype(float),
+                list(global_df.index),
+                local_mgr.original_labels,
+                local_mgr.linkage_matrix,
+            )
+            # Update global matrix widget steps
+            global_matrix_widget.set_enforced_step_manager(enforced_mgr)
+            # Update global dendrogram
+            global_dendro.set_enforced_linkage(enforced_mgr.linkage_matrix, enforced_mgr.max_sim)
+        else:
+            global_matrix_widget.restore_step_manager()
+            global_dendro._enforced_linkage = None
+            global_dendro._enforced_max_sim = 1.0
+            global_dendro.update_dendrogram()
 
     def generate_acc(self):
         """Generate ACC visualization using tree-based algorithm"""
@@ -3973,10 +4155,20 @@ class MainWindow(QMainWindow):
             acc_logger.addHandler(log_handler)
 
             try:
-                root, acc_steps = build_acc_from_matrices_tree(
-                    local_matrix, global_matrix, unit=1.0, method="average",
-                    min_diameter=min_d, max_diameter=max_d, diversity=diversity,
-                )
+                algo = self.right_panel.algorithm_combo.currentText()
+                if algo == "Paper":
+                    root, acc_steps = build_acc_paper(
+                        local_matrix, global_matrix, unit=1.0, method="average",
+                        min_diameter=min_d, max_diameter=max_d, diversity=diversity,
+                    )
+                    self.acc_algorithm = "Paper"
+                    self.acc_cached_steps = root._cached_steps
+                else:
+                    root, acc_steps = build_acc_from_matrices_tree(
+                        local_matrix, global_matrix, unit=1.0, method="average",
+                        min_diameter=min_d, max_diameter=max_d, diversity=diversity,
+                    )
+                    self.acc_algorithm = "Tree"
                 # Cache tree root and merge_log for diameter re-rendering
                 self.acc_tree_root = root
                 self.acc_merge_log = root._merge_log
@@ -4009,10 +4201,20 @@ class MainWindow(QMainWindow):
             return
 
         try:
-            steps = rerender_acc_tree(
-                self.acc_tree_root, self.acc_merge_log,
-                min_diameter=min_diameter, max_diameter=max_diameter,
-            )
+            if getattr(self, "acc_algorithm", "Tree") == "Paper":
+                steps = rerender_acc_paper(
+                    self.acc_tree_root, self.acc_merge_log,
+                    self.acc_cached_steps,
+                    self.acc_tree_root._local_matrix,
+                    self.acc_tree_root._global_matrix,
+                    self.acc_tree_root._diversity,
+                    min_diameter=min_diameter, max_diameter=max_diameter,
+                )
+            else:
+                steps = rerender_acc_tree(
+                    self.acc_tree_root, self.acc_merge_log,
+                    min_diameter=min_diameter, max_diameter=max_diameter,
+                )
             current_step = self.right_panel.acc_widget.current_step
             self.right_panel.acc_widget.set_acc_steps(steps)
             # Restore step position
