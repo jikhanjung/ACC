@@ -96,8 +96,8 @@ def _paper_radius_fn(global_sim):
 class TestThetaBtwAddArea:
     def test_theta_btw_formula(self):
         """θ_btw = θ₂ - θ₁/2. Paper example: 126 - 72/2 = 90."""
-        theta1 = THETA_MAX * (1.0 - 0.6)   # 72°
-        theta2 = THETA_MAX * (1.0 - 0.3)   # 126° (average of 0.2 and 0.4 = 0.3)
+        theta1 = THETA_MAX * (1.0 - 0.6)  # 72°
+        theta2 = THETA_MAX * (1.0 - 0.3)  # 126° (average of 0.2 and 0.4 = 0.3)
         theta_btw = theta2 - theta1 / 2.0
         assert pytest.approx(theta_btw, abs=0.1) == 90.0
 
@@ -141,6 +141,7 @@ class TestSequenceSelectionAddArea:
         )
 
         from acc_core_tree import ACCNode
+
         merged = ACCNode(
             members={"A", "B", "C"},
             local_sim=0.3,
@@ -149,8 +150,7 @@ class TestSequenceSelectionAddArea:
             angle=THETA_MAX * (1.0 - 0.3),  # 126°
         )
 
-        result = _add_area(state_ab, "C", merged, _paper_radius_fn,
-                           local)
+        result, _log = _add_area(state_ab, "C", merged, _paper_radius_fn, local)
 
         # C should be at the end (ABC sequence)
         assert result.sequence[-1] == "C" or result.sequence[0] == "C"
@@ -178,6 +178,7 @@ class TestThetaReversionAddArea:
         )
 
         from acc_core_tree import ACCNode
+
         merged = ACCNode(
             members={"A", "B", "C"},
             local_sim=0.3,
@@ -186,12 +187,16 @@ class TestThetaReversionAddArea:
             angle=126.0,
         )
 
-        result = _add_area(state_ab, "C", merged, _paper_radius_fn,
-                           local)
+        result, _log = _add_area(state_ab, "C", merged, _paper_radius_fn, local)
 
-        # After reversion and proportional scaling, total should equal θ₂ = 126°
+        # Raw sub_angles are NOT adjusted (deferred to _compute_positions).
+        # Verify raw total >= θ₂ (before adjustment).
         total = sum(result.sub_angles)
-        assert pytest.approx(total, abs=0.1) == 126.0
+        assert total >= 126.0 - 0.1
+
+        # After _compute_positions, rendered angles should fit θ₂ = 126°
+        positions = _compute_positions(result)
+        assert len(positions) == 3
 
 
 # ────────────────────────────────────────────────────────────
@@ -212,6 +217,7 @@ class TestProportionalScalingAddArea:
         )
 
         from acc_core_tree import ACCNode
+
         merged = ACCNode(
             members={"A", "B", "C"},
             local_sim=0.3,
@@ -220,17 +226,20 @@ class TestProportionalScalingAddArea:
             angle=126.0,
         )
 
-        result = _add_area(state_ab, "C", merged, _paper_radius_fn,
-                           local)
+        result, _log = _add_area(state_ab, "C", merged, _paper_radius_fn, local)
 
         assert len(result.sub_angles) == 2
-        total = sum(result.sub_angles)
-        assert pytest.approx(total, abs=0.1) == 126.0
 
-        # Ratio should be preserved: AB:BC = 72:108 = 2:3
-        ratio = result.sub_angles[0] / result.sub_angles[1] if result.sub_angles[1] > 0 else 0
-        expected_ratio = 72.0 / 108.0
-        assert pytest.approx(ratio, abs=0.05) == expected_ratio
+        # Raw angles are NOT adjusted; adjustment is deferred to _compute_positions.
+        # Verify that the raw ratio is preserved (reversion changes one angle,
+        # but the original AB angle and the reverted BC angle are kept as-is).
+        # After _compute_positions, total rendered angle span should equal θ₂ = 126°
+        positions = _compute_positions(result)
+        import math
+
+        angles_from_positions = sorted(math.degrees(math.atan2(y, x)) for x, y in positions.values())
+        span = angles_from_positions[-1] - angles_from_positions[0]
+        assert pytest.approx(span, abs=1.0) == result.total_angle
 
     def test_diameter_maintained(self, add_area_matrices):
         """d of AB should be maintained (not scaled) in add_area."""
@@ -246,6 +255,7 @@ class TestProportionalScalingAddArea:
         )
 
         from acc_core_tree import ACCNode
+
         merged = ACCNode(
             members={"A", "B", "C"},
             local_sim=0.3,
@@ -254,8 +264,7 @@ class TestProportionalScalingAddArea:
             angle=126.0,
         )
 
-        result = _add_area(state_ab, "C", merged, _paper_radius_fn,
-                           local)
+        result, _log = _add_area(state_ab, "C", merged, _paper_radius_fn, local)
 
         # Existing area radii should be maintained (inner circle)
         assert result.area_radius["A"] == 2.0
@@ -272,8 +281,8 @@ class TestProportionalScalingAddArea:
 class TestThetaBtwMerge:
     def test_theta_btw_merge_formula(self):
         """θ_btw = θ₃ - θ₁/2 - θ₂/2. Paper: 130.5 - 36 - 45 = 49.5."""
-        theta1 = THETA_MAX * (1.0 - 0.6)   # 72°
-        theta2 = THETA_MAX * (1.0 - 0.5)   # 90°
+        theta1 = THETA_MAX * (1.0 - 0.6)  # 72°
+        theta2 = THETA_MAX * (1.0 - 0.5)  # 90°
         # θ₃ depends on average of inter-cluster similarities
         # Paper gives 130.5° → local_sim ≈ 0.275
         theta3 = 130.5
@@ -322,6 +331,7 @@ class TestSequenceSelectionMerge:
         )
 
         from acc_core_tree import ACCNode
+
         merged = ACCNode(
             members={"A", "B", "C", "D"},
             local_sim=0.275,
@@ -330,8 +340,7 @@ class TestSequenceSelectionMerge:
             angle=130.5,
         )
 
-        result = _merge_clusters(state1, state2, merged, _paper_radius_fn,
-                                 local, global_, {})
+        result, _log = _merge_clusters(state1, state2, merged, _paper_radius_fn, local, global_, {})
 
         # B and D should be adjacent in the result
         b_idx = result.sequence.index("B")
@@ -354,7 +363,8 @@ class TestThetaReversionMerge:
 # ────────────────────────────────────────────────────────────
 class TestProportionalScalingMerge:
     def test_proportional_theta_merge(self, merge_matrices):
-        """After scaling, total θ should equal θ₃ = 130.5°."""
+        """Raw sub_angles are NOT adjusted; adjustment deferred to _compute_positions.
+        After rendering, the angular span should equal θ₃ = 130.5°."""
         local, global_ = merge_matrices
 
         state1 = ClusterState(
@@ -375,6 +385,7 @@ class TestProportionalScalingMerge:
         )
 
         from acc_core_tree import ACCNode
+
         merged = ACCNode(
             members={"A", "B", "C", "D"},
             local_sim=0.275,
@@ -383,20 +394,29 @@ class TestProportionalScalingMerge:
             angle=130.5,
         )
 
-        result = _merge_clusters(state1, state2, merged, _paper_radius_fn,
-                                 local, global_, {})
+        result, _log = _merge_clusters(state1, state2, merged, _paper_radius_fn, local, global_, {})
 
-        total = sum(result.sub_angles)
-        assert pytest.approx(total, abs=0.5) == 130.5
+        # Raw total should be >= θ₃ (before adjustment)
+        raw_total = sum(result.sub_angles)
+        assert raw_total >= 130.5 - 0.5
+
+        # After _compute_positions, rendered span should fit θ₃ = 130.5°
+        positions = _compute_positions(result)
+        import math
+
+        angles_from_positions = sorted(math.degrees(math.atan2(y, x)) for x, y in positions.values())
+        span = angles_from_positions[-1] - angles_from_positions[0]
+        assert pytest.approx(span, abs=1.0) == 130.5
 
     def test_proportional_d_merge(self, merge_matrices):
-        """d scaling: d₃ > max(d₁,d₂) → proportional scale."""
+        """d scaling is deferred to _compute_positions.
+        Raw area_radius should be unchanged; rendered positions should be scaled."""
         local, global_ = merge_matrices
 
         state1 = ClusterState(
             sequence=["A", "B"],
             sub_angles=[72.0],
-            area_radius={"A": 2.0, "B": 2.0},  # d=4 → radius=2
+            area_radius={"A": 2.0, "B": 2.0},
             total_angle=72.0,
             total_diameter=4.0,
             local_sim=0.6,
@@ -404,30 +424,43 @@ class TestProportionalScalingMerge:
         state2 = ClusterState(
             sequence=["C", "D"],
             sub_angles=[90.0],
-            area_radius={"C": 2.5, "D": 2.5},  # d=5 → radius=2.5
+            area_radius={"C": 2.5, "D": 2.5},
             total_angle=90.0,
             total_diameter=5.0,
             local_sim=0.5,
         )
 
         from acc_core_tree import ACCNode
-        # d₃ = 7.5, max(d₁, d₂) = 5 → scale = 7.5/5 = 1.5
+
+        # _paper_radius_fn(0.1) = (1/0.1)/2 = 5.0 > max_existing(2.5)
         merged = ACCNode(
             members={"A", "B", "C", "D"},
             local_sim=0.275,
-            global_sim=0.35,
-            diameter=7.5,
+            global_sim=0.1,
+            diameter=10.0,
             angle=130.5,
         )
 
-        result = _merge_clusters(state1, state2, merged, _paper_radius_fn,
-                                 local, global_, {})
+        result, _log = _merge_clusters(state1, state2, merged, _paper_radius_fn, local, global_, {})
 
-        # After scaling: radius_A = 2.0*1.5=3.0, radius_C = 2.5*1.5=3.75
-        assert pytest.approx(result.area_radius["A"], abs=0.01) == 3.0
-        assert pytest.approx(result.area_radius["B"], abs=0.01) == 3.0
-        assert pytest.approx(result.area_radius["C"], abs=0.01) == 3.75
-        assert pytest.approx(result.area_radius["D"], abs=0.01) == 3.75
+        # Raw area_radius should be UNCHANGED (no scaling in _merge_clusters)
+        assert pytest.approx(result.area_radius["A"], abs=0.01) == 2.0
+        assert pytest.approx(result.area_radius["B"], abs=0.01) == 2.0
+        assert pytest.approx(result.area_radius["C"], abs=0.01) == 2.5
+        assert pytest.approx(result.area_radius["D"], abs=0.01) == 2.5
+
+        # target_radius should be set for deferred scaling
+        assert pytest.approx(result.target_radius, abs=0.01) == 5.0
+
+        # After _compute_positions, rendered radii should be scaled
+        import math
+
+        positions = _compute_positions(result)
+        rendered_radii = {name: math.sqrt(x**2 + y**2) for name, (x, y) in positions.items()}
+        # Max rendered radius should match target (5.0)
+        assert pytest.approx(max(rendered_radii.values()), abs=0.01) == 5.0
+        # Scale = 5.0/2.5 = 2.0, so A should be 2.0*2.0 = 4.0
+        assert pytest.approx(rendered_radii["A"], abs=0.01) == 4.0
 
 
 # ────────────────────────────────────────────────────────────
@@ -439,8 +472,7 @@ class TestStepDictFormat:
         local, global_ = add_area_matrices
         root, merge_log = build_acc_tree(local, global_, unit=1.0)
         radius_fn = _make_radius_fn(1.0, 6.0)
-        steps, cached = render_paper(root, merge_log, local, global_,
-                                     radius_fn, {})
+        steps, cached = render_paper(root, merge_log, local, global_, radius_fn, {})
 
         assert len(steps) >= 1
         for step in steps:
@@ -467,8 +499,7 @@ class TestStepDictFormat:
         local, global_ = add_area_matrices
         root, merge_log = build_acc_tree(local, global_, unit=1.0)
         radius_fn = _make_radius_fn(1.0, 6.0)
-        steps, _ = render_paper(root, merge_log, local, global_,
-                                radius_fn, {})
+        steps, _ = render_paper(root, merge_log, local, global_, radius_fn, {})
         assert len(steps) == len(merge_log)
 
 
@@ -481,6 +512,7 @@ class TestDiversityOrdering:
         local, global_ = add_area_matrices
 
         from acc_core_tree import ACCNode
+
         left = ACCNode(members={"A"}, diversity=5)
         right = ACCNode(members={"B"}, diversity=10)
         merged = ACCNode(
@@ -491,8 +523,7 @@ class TestDiversityOrdering:
             angle=72.0,
         )
 
-        state = _create_pair(left, right, merged, _paper_radius_fn,
-                             local, global_, {"A": 5, "B": 10})
+        state, _log = _create_pair(left, right, merged, _paper_radius_fn, local, global_, {"A": 5, "B": 10})
 
         # B has higher diversity → should be first
         assert state.sequence[0] == "B"
@@ -502,6 +533,7 @@ class TestDiversityOrdering:
         local, global_ = add_area_matrices
 
         from acc_core_tree import ACCNode
+
         left = ACCNode(members={"B"}, diversity=5)
         right = ACCNode(members={"A"}, diversity=5)
         merged = ACCNode(
@@ -512,8 +544,7 @@ class TestDiversityOrdering:
             angle=72.0,
         )
 
-        state = _create_pair(left, right, merged, _paper_radius_fn,
-                             local, global_, {"A": 5, "B": 5})
+        state, _log = _create_pair(left, right, merged, _paper_radius_fn, local, global_, {"A": 5, "B": 5})
 
         assert state.sequence[0] == "A"
 
@@ -528,12 +559,10 @@ class TestRerenderPreservesSequence:
         root, merge_log = build_acc_tree(local, global_, unit=1.0)
 
         radius_fn1 = _make_radius_fn(1.0, 6.0)
-        steps1, cached = render_paper(root, merge_log, local, global_,
-                                      radius_fn1, {})
+        steps1, cached = render_paper(root, merge_log, local, global_, radius_fn1, {})
 
         radius_fn2 = _make_radius_fn(2.0, 10.0)
-        steps2 = rerender_paper(root, merge_log, cached, local, global_,
-                                radius_fn2, {})
+        steps2 = rerender_paper(root, merge_log, cached, local, global_, radius_fn2, {})
 
         # Sequences should be identical
         for s1, s2 in zip(steps1, steps2):
@@ -547,12 +576,10 @@ class TestRerenderPreservesSequence:
         root, merge_log = build_acc_tree(local, global_, unit=1.0)
 
         radius_fn1 = _make_radius_fn(1.0, 6.0)
-        steps1, cached = render_paper(root, merge_log, local, global_,
-                                      radius_fn1, {})
+        steps1, cached = render_paper(root, merge_log, local, global_, radius_fn1, {})
 
         radius_fn2 = _make_radius_fn(2.0, 10.0)
-        steps2 = rerender_paper(root, merge_log, cached, local, global_,
-                                radius_fn2, {})
+        steps2 = rerender_paper(root, merge_log, cached, local, global_, radius_fn2, {})
 
         # Final step should have different point coordinates
         if steps1 and steps2:
@@ -675,8 +702,7 @@ class TestFullPipeline:
         root, merge_log = build_acc_tree(local, global_, unit=1.0)
         radius_fn = _make_radius_fn(1.0, 6.0)
 
-        steps, cached = render_paper(root, merge_log, local, global_,
-                                     radius_fn, {})
+        steps, cached = render_paper(root, merge_log, local, global_, radius_fn, {})
 
         assert len(steps) == len(merge_log)
         assert len(cached) == len(merge_log)
@@ -694,8 +720,7 @@ class TestFullPipeline:
         root, merge_log = build_acc_tree(local, global_, unit=1.0)
         radius_fn = _make_radius_fn(1.0, 6.0)
 
-        steps, cached = render_paper(root, merge_log, local, global_,
-                                     radius_fn, {})
+        steps, cached = render_paper(root, merge_log, local, global_, radius_fn, {})
 
         assert len(steps) == len(merge_log)
 

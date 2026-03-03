@@ -339,8 +339,9 @@ def build_acc_from_matrices_iterative(local_matrix, global_matrix, unit=1.0, met
     return steps
 
 
-def build_acc_from_matrices_tree(local_matrix, global_matrix, unit=1.0, method="average",
-                                  min_diameter=None, max_diameter=None, diversity=None):
+def build_acc_from_matrices_tree(
+    local_matrix, global_matrix, unit=1.0, method="average", min_diameter=None, max_diameter=None, diversity=None
+):
     """
     Build ACC using tree-based algorithm.
 
@@ -359,8 +360,12 @@ def build_acc_from_matrices_tree(local_matrix, global_matrix, unit=1.0, method="
     from acc_core_tree import build_acc_from_tree
 
     return build_acc_from_tree(
-        local_matrix, global_matrix, unit=unit, method=method,
-        min_diameter=min_diameter, max_diameter=max_diameter,
+        local_matrix,
+        global_matrix,
+        unit=unit,
+        method=method,
+        min_diameter=min_diameter,
+        max_diameter=max_diameter,
         diversity=diversity,
     )
 
@@ -384,8 +389,16 @@ def rerender_acc_tree(root, merge_log, min_diameter=None, max_diameter=None):
     return generate_steps(root, merge_log, min_diameter=min_diameter, max_diameter=max_diameter)
 
 
-def build_acc_paper(local_matrix, global_matrix, unit=1.0, method="average",
-                    min_diameter=None, max_diameter=None, diversity=None):
+def build_acc_paper(
+    local_matrix,
+    global_matrix,
+    unit=1.0,
+    method="average",
+    min_diameter=None,
+    max_diameter=None,
+    diversity=None,
+    adjust=True,
+):
     """
     Build ACC using the paper algorithm (4-step incremental procedure).
 
@@ -400,6 +413,7 @@ def build_acc_paper(local_matrix, global_matrix, unit=1.0, method="average",
         min_diameter: optional min diameter for scaling
         max_diameter: optional max diameter for scaling
         diversity: optional dict mapping area name → present taxa count
+        adjust: if True (default), apply θ scaling; if False, use raw angles
 
     Returns:
         (root, steps): ACCNode tree root and list of step dicts
@@ -408,14 +422,23 @@ def build_acc_paper(local_matrix, global_matrix, unit=1.0, method="average",
     from acc_render_paper import render_paper
 
     root, merge_log = build_acc_tree(
-        local_matrix, global_matrix, unit=unit, method=method, diversity=diversity,
+        local_matrix,
+        global_matrix,
+        unit=unit,
+        method=method,
+        diversity=diversity,
     )
     root._merge_log = merge_log
 
     radius_fn = _make_radius_fn(min_diameter, max_diameter)
     steps, cached_steps = render_paper(
-        root, merge_log, local_matrix, global_matrix, radius_fn,
+        root,
+        merge_log,
+        local_matrix,
+        global_matrix,
+        radius_fn,
         diversity or {},
+        adjust=adjust,
     )
     root._cached_steps = cached_steps
     root._local_matrix = local_matrix
@@ -425,8 +448,17 @@ def build_acc_paper(local_matrix, global_matrix, unit=1.0, method="average",
     return root, steps
 
 
-def rerender_acc_paper(root, merge_log, cached_steps, local_matrix, global_matrix,
-                       diversity, min_diameter=None, max_diameter=None):
+def rerender_acc_paper(
+    root,
+    merge_log,
+    cached_steps,
+    local_matrix,
+    global_matrix,
+    diversity,
+    min_diameter=None,
+    max_diameter=None,
+    adjust=True,
+):
     """
     Re-render paper algorithm with new diameter settings (no tree rebuild).
 
@@ -439,6 +471,7 @@ def rerender_acc_paper(root, merge_log, cached_steps, local_matrix, global_matri
         diversity: dict mapping area name → present taxa count
         min_diameter: target min diameter
         max_diameter: target max diameter
+        adjust: if True (default), apply θ scaling; if False, use raw angles
 
     Returns:
         steps: list of step dicts for GUI
@@ -448,8 +481,14 @@ def rerender_acc_paper(root, merge_log, cached_steps, local_matrix, global_matri
 
     radius_fn = _make_radius_fn(min_diameter, max_diameter)
     return rerender_paper(
-        root, merge_log, cached_steps, local_matrix, global_matrix,
-        radius_fn, diversity,
+        root,
+        merge_log,
+        cached_steps,
+        local_matrix,
+        global_matrix,
+        radius_fn,
+        diversity,
+        adjust=adjust,
     )
 
 
@@ -504,7 +543,7 @@ def similarity_from_presence(areas, taxa, matrix, method="jaccard", raup_crick_i
     import pandas as pd
 
     n = len(areas)
-    N = len(taxa)  # Total number of taxa in the pool
+    n_taxa = len(taxa)  # Total number of taxa in the pool
 
     # Convert rows to sets of present taxa indices
     taxa_sets = []
@@ -535,12 +574,12 @@ def similarity_from_presence(areas, taxa, matrix, method="jaccard", raup_crick_i
             elif method == "raup_crick":
                 # Monte Carlo simulation-based Raup-Crick similarity
                 # Compare observed overlap to random null model
-                if ni == 0 or nj == 0 or N == 0:
+                if ni == 0 or nj == 0 or n_taxa == 0:
                     val = 0.0
                 else:
                     # Count how many random samples have >= observed overlap
                     more_similar = 0
-                    taxa_pool = list(range(N))
+                    taxa_pool = list(range(n_taxa))
 
                     for _ in range(raup_crick_iterations):
                         # Randomly sample ni and nj taxa from the pool

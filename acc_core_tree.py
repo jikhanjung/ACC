@@ -21,8 +21,8 @@ logger = logging.getLogger("ACC_Tree")
 
 THETA_MAX_DEGREES = 180.0
 DEFAULT_SIMILARITY = 0.5
-DEFAULT_MIN_DIAMETER = 1.0   # diameter at similarity=1
-DEFAULT_MAX_DIAMETER = 6.0   # diameter at similarity≈0
+DEFAULT_MIN_DIAMETER = 1.0  # diameter at similarity=1
+DEFAULT_MAX_DIAMETER = 6.0  # diameter at similarity≈0
 
 
 # ────────────────────────────────────────────────────────────
@@ -40,7 +40,7 @@ class ACCNode:
     diameter: float = 0.0
     angle: float = 0.0
     merge_order: int = -1  # -1 = leaf, 0+ = merge step
-    diversity: int = 0     # leaf only: count of present taxa
+    diversity: int = 0  # leaf only: count of present taxa
     points: dict = field(default_factory=dict)
 
     @property
@@ -64,6 +64,27 @@ class ACCNode:
     @property
     def radius(self) -> float:
         return self.diameter / 2.0
+
+
+@dataclass
+class ACCResult:
+    """Unified container for all ACC generation results.
+
+    Collects tree structure, matrices, steps, and settings in one place
+    so that downstream code can reference a single object instead of
+    scattered attributes on MainWindow.
+    """
+
+    root: ACCNode  # tree root
+    merge_log: list  # [(merge_order, parent_node), ...]
+    steps: list  # step dicts (coordinates for GUI)
+    algorithm: str  # "Paper" or "Tree"
+    local_matrix: dict  # dict-of-dict local similarity
+    global_matrix: dict  # dict-of-dict global similarity
+    diversity: dict  # area_name → int
+    min_diameter: float | None = None  # diameter setting
+    max_diameter: float | None = None  # diameter setting
+    cached_steps: list | None = None  # CachedStep list (Paper only)
 
 
 # ────────────────────────────────────────────────────────────
@@ -161,8 +182,7 @@ def _determine_order(node_a, node_b, local_matrix, _diversity=None):
 # ────────────────────────────────────────────────────────────
 # Tree building
 # ────────────────────────────────────────────────────────────
-def build_acc_tree(local_matrix, global_matrix, unit=1.0, method="weighted",
-                   diversity=None):
+def build_acc_tree(local_matrix, global_matrix, unit=1.0, method="weighted", diversity=None):
     """Build an ACCNode tree using greedy agglomeration (WPGMA).
 
     Uses simple /2 averaging at each merge (WPGMA), matching the dendrogram
@@ -402,6 +422,7 @@ def _subtree_for_step(root, max_merge_order):
     At step k, all merges with merge_order <= k have happened.
     Returns list of top-level nodes (ACCNode) visible at that step.
     """
+
     def _walk(node):
         if node.is_leaf:
             return [node]
@@ -584,9 +605,9 @@ def _node_to_structure(node, radius_fn):
 # ────────────────────────────────────────────────────────────
 # Top-level API
 # ────────────────────────────────────────────────────────────
-def build_acc_from_tree(local_matrix, global_matrix, unit=1.0, method="average",
-                        min_diameter=None, max_diameter=None,
-                        diversity=None):
+def build_acc_from_tree(
+    local_matrix, global_matrix, unit=1.0, method="average", min_diameter=None, max_diameter=None, diversity=None
+):
     """Build ACC tree and generate step-by-step visualisation data.
 
     Args:
@@ -605,7 +626,11 @@ def build_acc_from_tree(local_matrix, global_matrix, unit=1.0, method="average",
     logger.info("Building ACC tree (areas=%d, unit=%.2f)", len(local_matrix), unit)
 
     root, merge_log = build_acc_tree(
-        local_matrix, global_matrix, unit=unit, method=method, diversity=diversity,
+        local_matrix,
+        global_matrix,
+        unit=unit,
+        method=method,
+        diversity=diversity,
     )
 
     # Attach merge_log to root for later re-rendering

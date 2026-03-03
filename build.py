@@ -1,8 +1,14 @@
 """
 ACC Build Script
 Builds executable using PyInstaller and creates installers for Windows, macOS, and Linux
+
+Usage:
+    python build.py              # default: onedir bundle
+    python build.py --onefile    # single-file executable
+    python build.py --onedir     # one-directory bundle (default)
 """
 
+import argparse
 import json
 import os
 import platform
@@ -12,6 +18,7 @@ import subprocess
 import tempfile
 from datetime import UTC, datetime
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 # Import version from centralized version file
 try:
@@ -45,12 +52,13 @@ def run_pyinstaller(args):
                 actual_name = arg.split("=", 1)[1]
                 break
 
-        # For onedir, check if executable exists
+        # Check if the executable was created at the expected path
+        exe_extension = get_platform_executable_extension()
         if "--onedir" in args:
-            exe_extension = get_platform_executable_extension()
-            exe_path = Path(f"dist/{actual_name}/ACC{exe_extension}")
+            exe_path = Path(f"dist/{actual_name}/{actual_name}{exe_extension}")
         else:
-            exe_path = Path(f"dist/{actual_name}")
+            # onefile: single executable in dist/
+            exe_path = Path(f"dist/{actual_name}{exe_extension}")
 
         if not exe_path.exists():
             dist_path = Path("dist")
@@ -149,13 +157,33 @@ def get_platform_separator():
     return ":"
 
 
+# --- CLI ---
+parser = argparse.ArgumentParser(description="Build ACC executable with PyInstaller")
+mode_group = parser.add_mutually_exclusive_group()
+mode_group.add_argument(
+    "--onefile",
+    action="store_true",
+    help="Build a single-file executable (default: onedir)",
+)
+mode_group.add_argument(
+    "--onedir",
+    action="store_true",
+    default=True,
+    help="Build a one-directory bundle (default)",
+)
+args = parser.parse_args()
+
+# --onefile wins when explicitly given (argparse sets --onedir default True)
+onefile = args.onefile
+
 # --- Configuration ---
 NAME = "ACC"
 BUILD_NUMBER = os.environ.get("BUILD_NUMBER", "local")
-today = datetime.now(UTC).date()
+today = datetime.now(tz=ZoneInfo("Asia/Seoul")).date()
 DATE = today.strftime("%Y%m%d")
+mode_label = "onefile" if onefile else "onedir"
 
-print(f"Building {NAME} version {VERSION}")
+print(f"Building {NAME} version {VERSION} ({mode_label})")
 print(f"Build number: {BUILD_NUMBER}")
 print(f"Build date: {DATE}")
 
@@ -183,7 +211,7 @@ sep = get_platform_separator()
 pyinstaller_args = [
     "--clean",
     "--noconfirm",
-    "--onedir",  # Create one-directory bundle
+    "--onefile" if onefile else "--onedir",
     "--windowed",  # Hide console window
     "--name=ACC",
     f"--add-data=data{sep}data",  # Include data directory
@@ -201,18 +229,21 @@ run_pyinstaller(pyinstaller_args)
 
 # Platform-specific packaging
 if platform.system() == "Windows":
-    print("\n=== Creating Windows Installer ===")
-    iss_file = "InnoSetup/ACC.iss.template"
-    if os.path.exists(iss_file):
-        run_inno_setup(iss_file, VERSION, BUILD_NUMBER)
+    if onefile:
+        print("\n=== Windows onefile build completed ===")
+        print(f"Executable: dist/ACC{exe_extension}")
     else:
-        print(f"InnoSetup template not found: {iss_file}")
-        print("Skipping installer creation.")
-        print("Creating portable ZIP instead...")
-        # Create portable ZIP
-        zip_name = f"ACC-Windows-Portable-v{VERSION}-build{BUILD_NUMBER}"
-        shutil.make_archive(zip_name, "zip", "dist/ACC")
-        print(f"Created {zip_name}.zip")
+        print("\n=== Creating Windows Installer ===")
+        iss_file = "InnoSetup/ACC.iss.template"
+        if os.path.exists(iss_file):
+            run_inno_setup(iss_file, VERSION, BUILD_NUMBER)
+        else:
+            print(f"InnoSetup template not found: {iss_file}")
+            print("Skipping installer creation.")
+            print("Creating portable ZIP instead...")
+            zip_name = f"ACC-Windows-Portable-v{VERSION}-build{BUILD_NUMBER}"
+            shutil.make_archive(zip_name, "zip", "dist/ACC")
+            print(f"Created {zip_name}.zip")
 
 elif platform.system() == "Darwin":
     print("\n=== macOS build completed ===")
@@ -223,4 +254,7 @@ elif platform.system() == "Linux":
     print("Use packaging/linux/create_appimage.sh to create AppImage")
 
 print("\n=== Build Complete ===")
-print("Executable location: dist/ACC/")
+if onefile:
+    print(f"Executable: dist/ACC{exe_extension}")
+else:
+    print("Executable location: dist/ACC/")

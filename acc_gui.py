@@ -10,9 +10,11 @@ Four-column layout with step-by-step clustering visualization:
 """
 
 # Import matplotlib components with proper backend setup
+import copy
 import json
 import math
 import os
+import re
 import sys
 from pathlib import Path
 
@@ -64,6 +66,7 @@ from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.figure import Figure
 from scipy.cluster.hierarchy import dendrogram
 
+from acc_core_tree import ACCResult
 from acc_utils import (
     build_acc_from_matrices_tree,
     build_acc_paper,
@@ -537,6 +540,7 @@ class StepMatrixWidget(QWidget):
         self.title = title
         self.matrix_type = title  # Store as matrix_type for consistency (e.g., "Local", "Global")
         self.show_header = show_header
+        self.loaded_name = ""  # basename of loaded CSV (without extension)
         self.matrix_data = None
         self.step_manager = None
         self.current_step = 0
@@ -677,6 +681,7 @@ class StepMatrixWidget(QWidget):
 
         if file_path:
             try:
+                self.loaded_name = Path(file_path).stem
                 # Read CSV with pandas
                 df = pd.read_csv(file_path, index_col=0)
 
@@ -928,7 +933,7 @@ class StepMatrixWidget(QWidget):
                 if i < j:
                     # Upper triangle: show values (editable)
                     value = matrix[i, j]
-                    item = QTableWidgetItem(f"{value:.3f}")
+                    item = QTableWidgetItem(f"{value:.4f}")
                     item.setTextAlignment(Qt.AlignCenter)
 
                     # Highlight appropriate rows/cols
@@ -1037,7 +1042,7 @@ class StepMatrixWidget(QWidget):
                 # Restore original value
                 if self.matrix_data is not None:
                     self.updating_mirror = True
-                    item.setText(f"{self.matrix_data.iloc[row, col]:.3f}")
+                    item.setText(f"{self.matrix_data.iloc[row, col]:.4f}")
                     self.updating_mirror = False
                 return
         except ValueError:
@@ -1047,7 +1052,7 @@ class StepMatrixWidget(QWidget):
             # Restore original value
             if self.matrix_data is not None:
                 self.updating_mirror = True
-                item.setText(f"{self.matrix_data.iloc[row, col]:.3f}")
+                item.setText(f"{self.matrix_data.iloc[row, col]:.4f}")
                 self.updating_mirror = False
             return
 
@@ -1071,7 +1076,7 @@ class StepMatrixWidget(QWidget):
             self.step_slider.setValue(max_steps)
 
             # Update info label
-            self.info_label.setText(f"✓ Updated {row_label}-{col_label}: {value:.3f}")
+            self.info_label.setText(f"✓ Updated {row_label}-{col_label}: {value:.4f}")
             self.info_label.setStyleSheet("color: green; font-size: 10px;")
 
             # Notify parent to update dendrogram
@@ -1190,9 +1195,7 @@ class StepDendrogramWidget(QWidget):
         if self.title == "Global":
             self.enforce_topology_checkbox = QCheckBox("Enforce local topology")
             self.enforce_topology_checkbox.setStyleSheet("font-size: 10px;")
-            self.enforce_topology_checkbox.setToolTip(
-                "Show global similarity values using local dendrogram topology"
-            )
+            self.enforce_topology_checkbox.setToolTip("Show global similarity values using local dendrogram topology")
             self.enforce_topology_checkbox.stateChanged.connect(self.on_checkbox_changed)
             header_layout.addWidget(self.enforce_topology_checkbox)
 
@@ -1361,7 +1364,7 @@ class StepDendrogramWidget(QWidget):
 
                 # Convert to similarity and set as labels
                 # similarity = max_sim - distance
-                similarity_labels = [f"{max_sim - x:.3f}" if 0 <= x <= max_sim else "" for x in xticks]
+                similarity_labels = [f"{max_sim - x:.4f}" if 0 <= x <= max_sim else "" for x in xticks]
                 ax.set_xticks(xticks)  # Set tick locations first
                 ax.set_xticklabels(similarity_labels)  # Then set labels
 
@@ -1382,7 +1385,7 @@ class StepDendrogramWidget(QWidget):
                         ax.text(
                             merge_distance,
                             merge_y,
-                            f" {merge_similarity:.3f}",
+                            f" {merge_similarity:.4f}",
                             fontsize=8,
                             color="darkblue",
                             verticalalignment="center",
@@ -1434,6 +1437,10 @@ class ACCVisualizationWidget(QWidget):
         self._internal_node_data = []
         self._leaf_node_data = []
         self._hover_cid = None  # motion_notify connection id
+        self._click_cid = None  # button_press connection id
+        self._rotation_angle = 0.0  # cumulative rotation in radians
+        self.show_title = True  # set False for thumbnails
+        self.flip = False  # mirror x-axis (reverse first cluster order)
         self.init_ui()
 
     def init_ui(self):
@@ -1598,6 +1605,7 @@ class ACCVisualizationWidget(QWidget):
     def set_acc_steps(self, steps):
         """Set ACC steps and display last step"""
         self.acc_steps = steps
+        self._rotation_angle = 0.0  # reset rotation on new ACC
         if steps:
             self.step_slider.setMaximum(len(steps) - 1)
             # Set to last step to show final ACC visualization
@@ -1649,21 +1657,27 @@ class ACCVisualizationWidget(QWidget):
             self.canvas.draw()
             return
 
-        # STEP 1: Collect all unique radii from all clusters
+        # STEP 1: Collect all unique radii from all clusters, apply rotation
         import math
 
         all_radii = set()
         all_points = {}
+        cos_r = math.cos(self._rotation_angle)
+        sin_r = math.sin(self._rotation_angle)
 
         for cluster in clusters:
             points = cluster.get("points", {})
 
             for member, (x, y) in points.items():
-                # Calculate actual radius from origin (0, 0)
-                # All points in ACC lie on concentric circles centered at origin
-                actual_radius = math.sqrt(x**2 + y**2)
+                # Apply flip then rotation
+                if self.flip:
+                    x = -x
+                rx = x * cos_r - y * sin_r
+                ry = x * sin_r + y * cos_r
+                # Radius is rotation-invariant
+                actual_radius = math.sqrt(rx**2 + ry**2)
                 all_radii.add(round(actual_radius, 3))
-                all_points[member] = (x, y, actual_radius)
+                all_points[member] = (rx, ry, actual_radius)
 
         # STEP 2: Draw concentric circles for each unique radius
         sorted_radii = sorted(all_radii)
@@ -1706,17 +1720,12 @@ class ACCVisualizationWidget(QWidget):
             ax.plot(x, y, "o", markersize=markersize, color=color, markeredgecolor="black", markeredgewidth=1.5)
             ax.text(x, y + 0.08, f"{member}", fontsize=10, ha="center", fontweight="bold", color=label_color)
 
-        # Set equal aspect ratio and limits
-        margin = max_radius * 0.5 if max_radius > 0 else 1.0
-        x_range = max(all_x) - min(all_x) if len(all_x) > 1 else 2.0
-        y_range = max(all_y) - min(all_y) if len(all_y) > 1 else 2.0
-        plot_range = max(x_range, y_range, max_radius * 2) + margin
+        # Set equal aspect ratio and limits centred on origin (0,0)
+        margin = max_radius * 0.3 if max_radius > 0 else 1.0
+        plot_half = max_radius + margin
 
-        center_x = (max(all_x) + min(all_x)) / 2 if len(all_x) > 1 else 0
-        center_y = (max(all_y) + min(all_y)) / 2 if len(all_y) > 1 else 0
-
-        ax.set_xlim(center_x - plot_range / 2, center_x + plot_range / 2)
-        ax.set_ylim(center_y - plot_range / 2, center_y + plot_range / 2)
+        ax.set_xlim(-plot_half, plot_half)
+        ax.set_ylim(-plot_half, plot_half)
         ax.set_aspect("equal")
 
         # Add grid and axes
@@ -1727,8 +1736,9 @@ class ACCVisualizationWidget(QWidget):
         ax.set_ylabel("Y", fontsize=10)
 
         # Title with step info
-        title = f"ACC Step {self.current_step}: {action}"
-        ax.set_title(title, fontsize=11, fontweight="bold")
+        if self.show_title:
+            title = f"ACC Step {self.current_step}: {action}"
+            ax.set_title(title, fontsize=11, fontweight="bold")
 
         # STEP 4: Draw internal node markers (if enabled)
         all_internal_nodes = []
@@ -1738,8 +1748,17 @@ class ACCVisualizationWidget(QWidget):
         if self.show_internal_nodes_cb and self.show_internal_nodes_cb.isChecked():
             for inode in all_internal_nodes:
                 ix, iy = inode["position"]
-                ax.plot(ix, iy, "D", markersize=7, color="#888888",
-                        markeredgecolor="black", markeredgewidth=1.0, alpha=0.7, zorder=3)
+                ax.plot(
+                    ix,
+                    iy,
+                    "D",
+                    markersize=7,
+                    color="#888888",
+                    markeredgecolor="black",
+                    markeredgewidth=1.0,
+                    alpha=0.7,
+                    zorder=3,
+                )
             self._internal_node_data = all_internal_nodes
         else:
             self._internal_node_data = []
@@ -1753,9 +1772,7 @@ class ACCVisualizationWidget(QWidget):
             sim_global = cluster.get("global_sim", 0.0)
 
             # Positions of all members in this cluster
-            cluster_points = {
-                m: (x, y) for m, (x, y, _r) in all_points.items() if m in members
-            }
+            cluster_points = {m: (x, y) for m, (x, y, _r) in all_points.items() if m in members}
             if not cluster_points:
                 continue
 
@@ -1788,16 +1805,12 @@ class ACCVisualizationWidget(QWidget):
                 if i > 0:
                     prev_m = sorted_members[i - 1]
                     px, py = cluster_points[prev_m]
-                    delta = math.degrees(
-                        math.atan2(y, x) - math.atan2(py, px)
-                    ) % 360
+                    delta = math.degrees(math.atan2(y, x) - math.atan2(py, px)) % 360
                     neighbors[prev_m] = min(delta, 360 - delta)
                 if i < len(sorted_members) - 1:
                     next_m = sorted_members[i + 1]
                     nx, ny = cluster_points[next_m]
-                    delta = math.degrees(
-                        math.atan2(ny, nx) - math.atan2(y, x)
-                    ) % 360
+                    delta = math.degrees(math.atan2(ny, nx) - math.atan2(y, x)) % 360
                     neighbors[next_m] = min(delta, 360 - delta)
 
                 self._leaf_node_data.append({
@@ -1810,10 +1823,13 @@ class ACCVisualizationWidget(QWidget):
                     "neighbors": neighbors,
                 })
 
-        # Connect hover event (disconnect previous if any)
+        # Connect hover and click events (disconnect previous if any)
         if self._hover_cid is not None:
             self.canvas.mpl_disconnect(self._hover_cid)
         self._hover_cid = self.canvas.mpl_connect("motion_notify_event", self._on_hover)
+        if self._click_cid is not None:
+            self.canvas.mpl_disconnect(self._click_cid)
+        self._click_cid = self.canvas.mpl_connect("button_press_event", self._on_click)
 
         self.figure.tight_layout()
         self.canvas.draw()
@@ -1821,6 +1837,41 @@ class ACCVisualizationWidget(QWidget):
         # Update info label
         self.info_label.setText(f"✓ Step {self.current_step}: {total_members} members")
         self.info_label.setStyleSheet("color: green; font-size: 10px;")
+
+    def _on_click(self, event):
+        """Handle left-click on a leaf node to rotate ACC so the clicked area aligns with (0,1)."""
+        if event.inaxes is None or event.button != 1:
+            return
+        ax = event.inaxes
+        xlim = ax.get_xlim()
+        threshold = (xlim[1] - xlim[0]) * 0.03
+
+        # Find nearest leaf
+        min_dist = float("inf")
+        nearest = None
+        for leaf in self._leaf_node_data:
+            lx, ly = leaf["position"]
+            dist = math.sqrt((event.xdata - lx) ** 2 + (event.ydata - ly) ** 2)
+            if dist < min_dist:
+                min_dist = dist
+                nearest = leaf
+
+        if nearest is None or min_dist >= threshold:
+            return
+
+        lx, ly = nearest["position"]
+        r = math.sqrt(lx**2 + ly**2)
+        if r < 1e-9:
+            return
+
+        # Current angle of the clicked point; target is π/2 (0,1)
+        current_angle = math.atan2(ly, lx)
+        delta = math.pi / 2.0 - current_angle
+        self._rotation_angle += delta
+
+        # Redraw with new rotation
+        if self.acc_steps and 0 <= self.current_step < len(self.acc_steps):
+            self.plot_acc_step(self.acc_steps[self.current_step])
 
     def _on_toggle_internal_nodes(self):
         """Redraw current step when internal nodes checkbox changes."""
@@ -1842,7 +1893,7 @@ class ACCVisualizationWidget(QWidget):
 
         for inode in self._internal_node_data:
             ix, iy = inode["position"]
-            dist = math.sqrt((event.xdata - ix)**2 + (event.ydata - iy)**2)
+            dist = math.sqrt((event.xdata - ix) ** 2 + (event.ydata - iy) ** 2)
             if dist < min_dist:
                 min_dist = dist
                 nearest = inode
@@ -1850,7 +1901,7 @@ class ACCVisualizationWidget(QWidget):
 
         for leaf in self._leaf_node_data:
             lx, ly = leaf["position"]
-            dist = math.sqrt((event.xdata - lx)**2 + (event.ydata - ly)**2)
+            dist = math.sqrt((event.xdata - lx) ** 2 + (event.ydata - ly) ** 2)
             if dist < min_dist:
                 min_dist = dist
                 nearest = leaf
@@ -1877,9 +1928,13 @@ class ACCVisualizationWidget(QWidget):
                 f"Merge Step: {node_data['merge_order']}"
             )
         else:
+            angle_from_12 = 90.0 - math.degrees(math.atan2(iy, ix))
+            if angle_from_12 < 0:
+                angle_from_12 += 360.0
             lines = [
                 f"Area:       {node_data['name']}",
                 f"Diameter:   {node_data['diameter']:.3f}",
+                f"Position:   {angle_from_12:.1f}°",
             ]
             for nb_name, nb_angle in node_data.get("neighbors", {}).items():
                 lines.append(f"Angle→{nb_name}:  {nb_angle:.1f}°")
@@ -1891,10 +1946,13 @@ class ACCVisualizationWidget(QWidget):
             text = "\n".join(lines)
         if self._hover_annotation is None:
             self._hover_annotation = ax.annotate(
-                text, xy=(ix, iy), xytext=(20, 20),
+                text,
+                xy=(ix, iy),
+                xytext=(20, 20),
                 textcoords="offset points",
                 bbox=dict(boxstyle="round,pad=0.5", fc="lightyellow", ec="gray", alpha=0.95),
-                fontsize=9, family="monospace",
+                fontsize=9,
+                family="monospace",
             )
         else:
             self._hover_annotation.xy = (ix, iy)
@@ -3844,6 +3902,32 @@ class RightPanel(ColumnPanel):
         self.show_log_btn.setEnabled(False)  # Disabled until ACC is generated
         button_layout.addWidget(self.show_log_btn, stretch=1)
 
+        # Send to ACC List button
+        self.send_btn = QPushButton("📤 Send")
+        self.send_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #FF9800;
+                color: white;
+                font-size: 14px;
+                font-weight: bold;
+                padding: 12px;
+                border-radius: 6px;
+            }
+            QPushButton:hover {
+                background-color: #F57C00;
+            }
+            QPushButton:pressed {
+                background-color: #E65100;
+            }
+            QPushButton:disabled {
+                background-color: #ccc;
+                color: #666;
+            }
+        """)
+        self.send_btn.clicked.connect(self.on_send_clicked)
+        self.send_btn.setEnabled(False)  # Disabled until ACC is generated
+        button_layout.addWidget(self.send_btn, stretch=1)
+
         self.content_layout.addLayout(button_layout)
 
         # Diameter controls
@@ -3879,6 +3963,18 @@ class RightPanel(ColumnPanel):
         self.show_internal_nodes_cb.setChecked(False)
         diameter_layout.addWidget(self.show_internal_nodes_cb)
 
+        self.flip_cb = QCheckBox("Flip")
+        self.flip_cb.setChecked(False)
+        diameter_layout.addWidget(self.flip_cb)
+
+        self.adjust_cb = QCheckBox("Adjust")
+        self.adjust_cb.setChecked(True)
+        diameter_layout.addWidget(self.adjust_cb)
+
+        self.angle_info_label = QLabel("")
+        self.angle_info_label.setStyleSheet("font-size: 10px; color: #666;")
+        diameter_layout.addWidget(self.angle_info_label)
+
         diameter_layout.addWidget(QLabel("Algo."))
         self.algorithm_combo = QComboBox()
         self.algorithm_combo.addItems(["Paper", "Tree"])
@@ -3891,9 +3987,29 @@ class RightPanel(ColumnPanel):
 
         # ACC visualization widget (no tabs)
         self.acc_widget = ACCVisualizationWidget()
+        self.acc_widget.show_title = False
         self.acc_widget.show_internal_nodes_cb = self.show_internal_nodes_cb
         self.show_internal_nodes_cb.stateChanged.connect(self.acc_widget._on_toggle_internal_nodes)
+        self.flip_cb.stateChanged.connect(self._on_flip_changed)
+        self.adjust_cb.stateChanged.connect(self._on_adjust_changed)
         self.content_layout.addWidget(self.acc_widget)
+
+    def _on_flip_changed(self, state):
+        """Toggle flip on the ACC widget and redraw."""
+        self.acc_widget.flip = bool(state)
+        if self.acc_widget.acc_steps and 0 <= self.acc_widget.current_step < len(self.acc_widget.acc_steps):
+            self.acc_widget.plot_acc_step(self.acc_widget.acc_steps[self.acc_widget.current_step])
+
+    def _on_adjust_changed(self, _state):
+        """Toggle θ adjustment and re-render ACC."""
+        main_window = self.window()
+        if isinstance(main_window, MainWindow):
+            try:
+                min_d = float(self.min_diameter.text()) if self.min_diameter.text().strip() else None
+                max_d = float(self.max_diameter.text()) if self.max_diameter.text().strip() else None
+                main_window.rerender_acc(min_d, max_d)
+            except ValueError:
+                pass
 
     def on_generate_clicked(self):
         """Handle generate button click"""
@@ -3906,6 +4022,12 @@ class RightPanel(ColumnPanel):
         main_window = self.window()
         if isinstance(main_window, MainWindow):
             main_window.show_acc_data()
+
+    def on_send_clicked(self):
+        """Handle send button click — send ACC result to ACC List panel"""
+        main_window = self.window()
+        if isinstance(main_window, MainWindow):
+            main_window.send_acc_to_list()
 
     def on_diameter_changed(self):
         """Handle diameter value change — re-render without rebuilding tree"""
@@ -3927,6 +4049,478 @@ class RightPanel(ColumnPanel):
                 pass
 
 
+class ACCListPanel(ColumnPanel):
+    """Panel for collecting and comparing multiple ACC results"""
+
+    def __init__(self, parent=None):
+        super().__init__("ACC List", parent)
+        self._items = []  # list of (item_frame, thumb_widget) tuples
+        self._counter = 0
+        self.setup_content()
+
+    def setup_content(self):
+        # Alignment combo boxes
+        combo_layout = QHBoxLayout()
+        combo_layout.addWidget(QLabel("Align:"))
+        self.align_combo1 = QComboBox()
+        self.align_combo1.addItem("(none)")
+        self.align_combo1.currentTextChanged.connect(self._on_align_changed)
+        combo_layout.addWidget(self.align_combo1, stretch=1)
+
+        self.align_combo2 = QComboBox()
+        self.align_combo2.addItem("(none)")
+        combo_layout.addWidget(self.align_combo2, stretch=1)
+
+        self.travel_btn = QPushButton("Travel")
+        self.travel_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #7B1FA2;
+                color: white;
+                font-size: 12px;
+                font-weight: bold;
+                padding: 4px 10px;
+                border-radius: 4px;
+            }
+            QPushButton:hover { background-color: #6A1B9A; }
+            QPushButton:pressed { background-color: #4A148C; }
+        """)
+        self.travel_btn.clicked.connect(self._on_travel_clicked)
+        combo_layout.addWidget(self.travel_btn)
+        self.content_layout.addLayout(combo_layout)
+
+        # Vertical scroll area containing thumbnails + travel chart
+        self.scroll_area = QScrollArea()
+        self.scroll_area.setWidgetResizable(True)
+        self.scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self.scroll_area.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+
+        self.scroll_widget = QWidget()
+        self.scroll_layout = QVBoxLayout()
+        self.scroll_layout.setContentsMargins(2, 2, 2, 2)
+        self.scroll_layout.setSpacing(6)
+
+        # Travel chart at the bottom (inside scroll)
+        self.travel_figure = Figure(figsize=(4, 4))
+        self.travel_canvas = FigureCanvas(self.travel_figure)
+        self.travel_canvas.setVisible(False)
+        self._travel_hover_cid = None
+        self._travel_point_data = []
+        self._travel_annotation = None
+        self.scroll_layout.addWidget(self.travel_canvas)
+
+        self.scroll_widget.setLayout(self.scroll_layout)
+        self.scroll_area.setWidget(self.scroll_widget)
+
+        self.content_layout.addWidget(self.scroll_area, stretch=1)
+
+    def resizeEvent(self, event):
+        """Recalculate item heights to match panel width (square aspect)."""
+        super().resizeEvent(event)
+        self._update_item_sizes()
+
+    def _update_item_sizes(self):
+        """Set each thumbnail and travel canvas height to match the available width."""
+        # Available width inside scroll area (minus margins and scrollbar)
+        w = self.scroll_area.viewport().width() - 12
+        h = max(w, 200)  # square, minimum 200
+        for _frame, thumb, _name in self._items:
+            thumb.setFixedHeight(h)
+        if self.travel_canvas.isVisible():
+            self.travel_canvas.setFixedHeight(h)
+
+    def add_result(self, acc_result, name="", flip=False):
+        """Add an ACCResult as a thumbnail item"""
+        self._counter += 1
+        item_frame = QWidget()
+        item_layout = QVBoxLayout()
+        item_layout.setContentsMargins(4, 4, 4, 4)
+        item_layout.setSpacing(2)
+
+        # Header: number + name + info + delete button
+        header_layout = QHBoxLayout()
+        n_areas = len(acc_result.steps[-1]["clusters"][0]["members"]) if acc_result.steps else 0
+        display_name = name or "ACC"
+        header_label = QLabel(f"#{self._counter}  {display_name}  ({acc_result.algorithm}, {n_areas} areas)")
+        header_label.setStyleSheet("font-weight: bold; font-size: 11px;")
+        header_layout.addWidget(header_label)
+        header_layout.addStretch()
+
+        delete_btn = QPushButton("✕")
+        delete_btn.setFixedSize(22, 22)
+        delete_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #e57373;
+                color: white;
+                border-radius: 4px;
+                font-weight: bold;
+                font-size: 12px;
+            }
+            QPushButton:hover { background-color: #ef5350; }
+        """)
+        delete_btn.clicked.connect(lambda _checked, f=item_frame: self.remove_result(f))
+        header_layout.addWidget(delete_btn)
+        item_layout.addLayout(header_layout)
+
+        # Thumbnail ACC widget
+        thumb = ACCVisualizationWidget()
+        thumb.show_title = False
+        thumb.flip = flip
+        thumb.step_controls.setVisible(False)
+        thumb.info_label.setVisible(False)
+        thumb.set_acc_steps(acc_result.steps)
+        # Hide step controls that set_acc_steps may have shown
+        thumb.step_controls.setVisible(False)
+        item_layout.addWidget(thumb)
+
+        item_frame.setLayout(item_layout)
+        item_frame.setStyleSheet("""
+            QWidget {
+                border: 1px solid #ccc;
+                border-radius: 4px;
+                background-color: #fafafa;
+            }
+        """)
+
+        # Insert before the travel canvas
+        travel_idx = self.scroll_layout.indexOf(self.travel_canvas)
+        self.scroll_layout.insertWidget(travel_idx, item_frame)
+        self._items.append((item_frame, thumb, display_name))
+        self._update_area_combos()
+        self._update_item_sizes()
+        # Apply current alignment if set
+        self._align_thumb(thumb)
+
+    def remove_result(self, item_frame):
+        """Remove an item and auto-hide panel if empty"""
+        for entry in self._items:
+            if entry[0] is item_frame:
+                self._items.remove(entry)
+                break
+        self.scroll_layout.removeWidget(item_frame)
+        item_frame.deleteLater()
+
+        if not self._items:
+            # Find the MainWindow and hide this panel
+            main_window = self.window()
+            if hasattr(main_window, "acc_list_scroll"):
+                main_window.acc_list_scroll.setVisible(False)
+                # Uncheck in View menu
+                for action in main_window.panel_actions:
+                    if action.text() == "ACC List":
+                        action.setChecked(False)
+                        break
+        self._update_area_combos()
+
+    def _collect_all_areas(self):
+        """Collect the union of area names across all stored ACC results."""
+        areas = set()
+        for _frame, thumb, _name in self._items:
+            if thumb.acc_steps:
+                last = thumb.acc_steps[-1]
+                for cluster in last.get("clusters", []):
+                    areas.update(cluster.get("points", {}).keys())
+        return sorted(areas)
+
+    def _update_area_combos(self):
+        """Refresh both combo boxes with the current union of area names."""
+        areas = self._collect_all_areas()
+        for combo in (self.align_combo1, self.align_combo2):
+            prev = combo.currentText()
+            combo.blockSignals(True)
+            combo.clear()
+            combo.addItem("(none)")
+            combo.addItems(areas)
+            idx = combo.findText(prev)
+            combo.setCurrentIndex(idx if idx >= 0 else 0)
+            combo.blockSignals(False)
+
+    def _align_thumb(self, thumb):
+        """Align a single thumbnail to the currently selected area in combo1."""
+        area = self.align_combo1.currentText()
+        if area == "(none)" or not thumb.acc_steps:
+            thumb._rotation_angle = 0.0
+        else:
+            thumb._rotation_angle = self._calc_rotation_for_area(thumb, area)
+        last = thumb.acc_steps[-1] if thumb.acc_steps else None
+        if last:
+            thumb.plot_acc_step(last)
+
+    def _on_align_changed(self, _text):
+        """When combo1 selection changes, re-align all thumbnails."""
+        for _frame, thumb, _name in self._items:
+            self._align_thumb(thumb)
+
+    @staticmethod
+    def _calc_rotation_for_area(thumb, area_name):
+        """Calculate rotation angle to place *area_name* at the (0,1) direction."""
+        if not thumb.acc_steps:
+            return 0.0
+        last = thumb.acc_steps[-1]
+        for cluster in last.get("clusters", []):
+            pts = cluster.get("points", {})
+            if area_name in pts:
+                x, y = pts[area_name]
+                if thumb.flip:
+                    x = -x
+                r = math.sqrt(x * x + y * y)
+                if r < 1e-9:
+                    return 0.0
+                current_angle = math.atan2(y, x)
+                return math.pi / 2.0 - current_angle
+        return 0.0
+
+    # ------------------------------------------------------------------
+    # Travel chart
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _calc_pairwise_distance(r1, angle1, r2, angle2):
+        """Calculate pairwise distance (PD) between two points on concentric circles.
+
+        Uses the paper formula:
+        - Same circle: arc length = 2*pi*r * (theta/360)
+        - Different circles: arc on smaller circle + radius difference
+          = 2*pi*r_small * (theta/360) + |r1 - r2|
+
+        r1, r2: radii (= diameter / 2)
+        angle1, angle2: angles in radians from origin
+        """
+        # Angle between the two points (always positive, <= pi)
+        dtheta = abs(angle1 - angle2)
+        if dtheta > math.pi:
+            dtheta = 2 * math.pi - dtheta
+        dtheta_deg = math.degrees(dtheta)
+
+        r_small = min(r1, r2)
+        arc = 2 * math.pi * r_small * (dtheta_deg / 360.0)
+        radial = abs(r1 - r2)
+        return arc + radial, arc, radial
+
+    def _on_travel_clicked(self):
+        """Draw travel chart: show only the traveling area's concentric circles and positions."""
+        anchor = self.align_combo1.currentText()
+        traveler = self.align_combo2.currentText()
+        if anchor == "(none)" or traveler == "(none)" or anchor == traveler:
+            self.travel_canvas.setVisible(False)
+            return
+
+        self.travel_figure.clear()
+        ax = self.travel_figure.add_subplot(111)
+
+        # Collect (rotated_x, rotated_y, radius, item_name) per ACC
+        travel_points = []
+
+        for _frame, thumb, item_name in self._items:
+            if not thumb.acc_steps:
+                continue
+            last = thumb.acc_steps[-1]
+            anchor_pos = None
+            traveler_pos = None
+            for cluster in last.get("clusters", []):
+                pts = cluster.get("points", {})
+                if anchor in pts:
+                    anchor_pos = pts[anchor]
+                if traveler in pts:
+                    traveler_pos = pts[traveler]
+            if anchor_pos is None or traveler_pos is None:
+                continue
+
+            # Apply flip then rotation to place anchor at (0,1)
+            ax_x, ax_y = anchor_pos
+            if thumb.flip:
+                ax_x = -ax_x
+            ar = math.sqrt(ax_x**2 + ax_y**2)
+            if ar < 1e-9:
+                continue
+            rot = math.pi / 2.0 - math.atan2(ax_y, ax_x)
+            cos_r = math.cos(rot)
+            sin_r = math.sin(rot)
+
+            # Flip then rotate traveler; radius is rotation-invariant
+            tx, ty = traveler_pos
+            if thumb.flip:
+                tx = -tx
+            rx = tx * cos_r - ty * sin_r
+            ry = tx * sin_r + ty * cos_r
+            tr = math.sqrt(tx**2 + ty**2)
+            travel_points.append((rx, ry, tr, item_name))
+
+        if not travel_points:
+            self.travel_canvas.setVisible(False)
+            return
+
+        # Calculate TD between consecutive points (td, arc_len, radial_len)
+        td_details = []
+        for i in range(len(travel_points) - 1):
+            rx1, ry1, r1, _ = travel_points[i]
+            rx2, ry2, r2, _ = travel_points[i + 1]
+            a1 = math.atan2(ry1, rx1)
+            a2 = math.atan2(ry2, rx2)
+            td, arc_len, radial_len = self._calc_pairwise_distance(r1, a1, r2, a2)
+            td_details.append((td, arc_len, radial_len))
+        td_values = [d[0] for d in td_details]
+        ttd = sum(td_values)
+
+        # Assign a colour per point
+        colors = plt.cm.plasma(np.linspace(0.15, 0.85, len(travel_points)))
+
+        # Draw each traveler's concentric circle in the same colour as its point
+        for i, (_rx, _ry, tr, _label) in enumerate(travel_points):
+            if tr < 1e-9:
+                continue
+            circle = plt.Circle(
+                (0, 0), tr, fill=False, edgecolor=colors[i], linewidth=1.5, linestyle="-", alpha=0.45, zorder=1
+            )
+            ax.add_patch(circle)
+
+        # Draw travel path: arc on smaller circle + radial line
+        td_label_data = []  # (lx, ly, td, arc_len, radial_len, name1, name2)
+        for i in range(len(travel_points) - 1):
+            rx1, ry1, r1, n1 = travel_points[i]
+            rx2, ry2, r2, n2 = travel_points[i + 1]
+            a1 = math.atan2(ry1, rx1)
+            a2 = math.atan2(ry2, rx2)
+            r_small = min(r1, r2)
+            seg_color = "#888888"
+
+            # 1) Arc on the smaller circle from a1 to a2 (shortest direction)
+            da = a2 - a1
+            if da > math.pi:
+                da -= 2 * math.pi
+            elif da < -math.pi:
+                da += 2 * math.pi
+            n_pts = max(int(abs(da) / 0.05), 2)
+            arc_angles = [a1 + da * t / n_pts for t in range(n_pts + 1)]
+            arc_xs = [r_small * math.cos(a) for a in arc_angles]
+            arc_ys = [r_small * math.sin(a) for a in arc_angles]
+            ax.plot(arc_xs, arc_ys, "-", color=seg_color, linewidth=1.5, alpha=0.7, zorder=2)
+
+            # 2) Radial line from arc endpoint to the point on the larger circle
+            if abs(r1 - r2) > 1e-9:
+                end_x = r_small * math.cos(a2)
+                end_y = r_small * math.sin(a2)
+                ax.plot([end_x, rx2], [end_y, ry2], "-", color=seg_color, linewidth=1.5, alpha=0.7, zorder=2)
+
+            # Arrow at the destination
+            if abs(r1 - r2) > 1e-9:
+                arr_sx, arr_sy = end_x, end_y
+            else:
+                arr_sx = arc_xs[-2] if len(arc_xs) >= 2 else arc_xs[0]
+                arr_sy = arc_ys[-2] if len(arc_ys) >= 2 else arc_ys[0]
+            ax.annotate(
+                "",
+                xy=(rx2, ry2),
+                xytext=(arr_sx, arr_sy),
+                arrowprops=dict(arrowstyle="->,head_width=0.25,head_length=0.15", color=seg_color, lw=1.5),
+                zorder=3,
+            )
+
+            # TD label at the midpoint of the arc
+            mid_a = a1 + da / 2
+            label_r = r_small + abs(r1 - r2) * 0.3
+            lx, ly = label_r * math.cos(mid_a), label_r * math.sin(mid_a)
+            td, arc_len, radial_len = td_details[i]
+            ax.text(
+                lx,
+                ly,
+                f"{td:.2f}",
+                fontsize=8,
+                ha="center",
+                va="center",
+                bbox=dict(boxstyle="round,pad=0.2", fc="white", ec="#aaaaaa", alpha=0.85),
+                zorder=5,
+            )
+            td_label_data.append((lx, ly, td, arc_len, radial_len, n1, n2))
+
+        # Draw points
+        for i, (rx, ry, _tr, _label) in enumerate(travel_points):
+            ax.plot(rx, ry, "o", markersize=10, color=colors[i], markeredgecolor="black", markeredgewidth=1.5, zorder=6)
+
+        # Axis setup
+        max_r = max(p[2] for p in travel_points)
+        margin = max_r * 0.3 if max_r > 0 else 1.0
+        plot_half = max_r + margin
+        ax.set_xlim(-plot_half, plot_half)
+        ax.set_ylim(-plot_half, plot_half)
+        ax.set_aspect("equal")
+        ax.grid(True, alpha=0.3)
+        ax.axhline(y=0, color="k", linestyle="--", alpha=0.3)
+        ax.axvline(x=0, color="k", linestyle="--", alpha=0.3)
+
+        # Title with TTD
+        if td_details:
+            td_parts = [f"{td:.2f} ({arc:.2f} + {rad:.2f})" for td, arc, rad in td_details]
+            td_str = " + ".join(f"{v:.2f}" for v in td_values)
+            ax.set_title(
+                f"Travel: {traveler} (aligned to {anchor})\nTD: {' + '.join(td_parts)} = TTD: {ttd:.2f}",
+                fontsize=10,
+                fontweight="bold",
+            )
+        else:
+            ax.set_title(f"Travel: {traveler} (aligned to {anchor})", fontsize=10, fontweight="bold")
+
+        # Store point and TD label data for hover tooltip
+        self._travel_point_data = travel_points
+        self._travel_td_labels = td_label_data
+        self._travel_annotation = ax.annotate(
+            "",
+            xy=(0, 0),
+            xytext=(10, 10),
+            textcoords="offset points",
+            bbox=dict(boxstyle="round,pad=0.3", fc="#ffffcc", ec="#888888", alpha=0.9),
+            fontsize=9,
+            zorder=10,
+        )
+        self._travel_annotation.set_visible(False)
+        # Connect hover event
+        if self._travel_hover_cid is not None:
+            self.travel_canvas.mpl_disconnect(self._travel_hover_cid)
+        self._travel_hover_cid = self.travel_canvas.mpl_connect("motion_notify_event", self._on_travel_hover)
+
+        self.travel_canvas.setVisible(True)
+        self._update_item_sizes()
+        self.travel_canvas.draw()
+
+    def _on_travel_hover(self, event):
+        """Show tooltip on hover over travel chart points and TD labels."""
+        ann = self._travel_annotation
+        if ann is None or event.inaxes is None:
+            if ann is not None:
+                ann.set_visible(False)
+                self.travel_canvas.draw_idle()
+            return
+
+        threshold = (event.inaxes.get_xlim()[1] - event.inaxes.get_xlim()[0]) * 0.03
+
+        # Check TD labels first
+        for lx, ly, td, arc_len, radial_len, n1, n2 in self._travel_td_labels:
+            dist = math.sqrt((event.xdata - lx) ** 2 + (event.ydata - ly) ** 2)
+            if dist < threshold:
+                ann.xy = (lx, ly)
+                ann.set_text(f"{n1} \u2192 {n2}\narc: {arc_len:.2f}\nradial: {radial_len:.2f}\nTD: {td:.2f}")
+                ann.set_visible(True)
+                self.travel_canvas.draw_idle()
+                return
+
+        # Check area points
+        for rx, ry, tr, label in self._travel_point_data:
+            dist = math.sqrt((event.xdata - rx) ** 2 + (event.ydata - ry) ** 2)
+            if dist < threshold:
+                ann.xy = (rx, ry)
+                angle_from_12 = 90.0 - math.degrees(math.atan2(ry, rx))
+                if angle_from_12 < 0:
+                    angle_from_12 += 360.0
+                ann.set_text(
+                    f"{label}\ndiameter: {tr * 2:.3f}\nx: {rx:.3f}, y: {ry:.3f}\nangle: {angle_from_12:.1f}\u00b0"
+                )
+                ann.set_visible(True)
+                self.travel_canvas.draw_idle()
+                return
+
+        ann.set_visible(False)
+        self.travel_canvas.draw_idle()
+
+
 class MainWindow(QMainWindow):
     """Main application window with 5-column layout and step-by-step visualization"""
 
@@ -3940,12 +4534,13 @@ class MainWindow(QMainWindow):
         self.setWindowTitle("ACC Visualizer - Step-by-Step Clustering")
         self.setGeometry(50, 50, 1920, 900)
 
-        # Create five panels
+        # Create panels
         self.data_panel = DataPanel()
         self.left_panel = LeftPanel()
         self.center_panel = CenterPanel()
         self.right_panel = RightPanel()
         self.nmds_panel = NMDSPanel()
+        self.acc_list_panel = ACCListPanel()
 
         # Add to scroll areas (instance variables for toggle access)
         self.data_scroll = QScrollArea()
@@ -3968,6 +4563,10 @@ class MainWindow(QMainWindow):
         self.nmds_scroll.setWidgetResizable(True)
         self.nmds_scroll.setWidget(self.nmds_panel)
 
+        self.acc_list_scroll = QScrollArea()
+        self.acc_list_scroll.setWidgetResizable(True)
+        self.acc_list_scroll.setWidget(self.acc_list_panel)
+
         # Create splitter for resizable panels
         self.splitter = QSplitter(Qt.Horizontal)
         self.splitter.addWidget(self.data_scroll)
@@ -3975,19 +4574,21 @@ class MainWindow(QMainWindow):
         self.splitter.addWidget(self.center_scroll)
         self.splitter.addWidget(self.right_scroll)
         self.splitter.addWidget(self.nmds_scroll)
+        self.splitter.addWidget(self.acc_list_scroll)
 
-        # Hide Raw Data and NMDS panels by default
+        # Hide Raw Data, NMDS, and ACC List panels by default
         self.data_scroll.setVisible(False)
         self.nmds_scroll.setVisible(False)
+        self.acc_list_scroll.setVisible(False)
 
         # Set initial sizes
-        self.splitter.setSizes([400, 450, 450, 500, 500])
+        self.splitter.setSizes([400, 450, 450, 500, 500, 400])
 
         # Set central widget
         self.setCentralWidget(self.splitter)
 
         # --- View menu & toolbar for panel show/hide ---
-        panel_names = ["Data", "Similarity", "Dendrogram", "ACC", "NMDS"]
+        panel_names = ["Data", "Similarity", "Dendrogram", "ACC", "NMDS", "ACC List"]
         self.panel_actions = []
 
         menu_bar = self.menuBar()
@@ -3995,7 +4596,7 @@ class MainWindow(QMainWindow):
 
         toolbar = self.addToolBar("Panels")
 
-        hidden_by_default = {"Data", "NMDS"}
+        hidden_by_default = {"Data", "NMDS", "ACC List"}
         for i, name in enumerate(panel_names):
             action = QAction(name, self)
             action.setCheckable(True)
@@ -4134,11 +4735,19 @@ class MainWindow(QMainWindow):
 
             # Read diameter settings
             try:
-                min_d = float(self.right_panel.min_diameter.text()) if self.right_panel.min_diameter.text().strip() else None
+                min_d = (
+                    float(self.right_panel.min_diameter.text())
+                    if self.right_panel.min_diameter.text().strip()
+                    else None
+                )
             except ValueError:
                 min_d = None
             try:
-                max_d = float(self.right_panel.max_diameter.text()) if self.right_panel.max_diameter.text().strip() else None
+                max_d = (
+                    float(self.right_panel.max_diameter.text())
+                    if self.right_panel.max_diameter.text().strip()
+                    else None
+                )
             except ValueError:
                 max_d = None
 
@@ -4156,34 +4765,62 @@ class MainWindow(QMainWindow):
 
             try:
                 algo = self.right_panel.algorithm_combo.currentText()
+                adjust = self.right_panel.adjust_cb.isChecked()
                 if algo == "Paper":
                     root, acc_steps = build_acc_paper(
-                        local_matrix, global_matrix, unit=1.0, method="average",
-                        min_diameter=min_d, max_diameter=max_d, diversity=diversity,
+                        local_matrix,
+                        global_matrix,
+                        unit=1.0,
+                        method="average",
+                        min_diameter=min_d,
+                        max_diameter=max_d,
+                        diversity=diversity,
+                        adjust=adjust,
                     )
                     self.acc_algorithm = "Paper"
                     self.acc_cached_steps = root._cached_steps
                 else:
                     root, acc_steps = build_acc_from_matrices_tree(
-                        local_matrix, global_matrix, unit=1.0, method="average",
-                        min_diameter=min_d, max_diameter=max_d, diversity=diversity,
+                        local_matrix,
+                        global_matrix,
+                        unit=1.0,
+                        method="average",
+                        min_diameter=min_d,
+                        max_diameter=max_d,
+                        diversity=diversity,
                     )
                     self.acc_algorithm = "Tree"
                 # Cache tree root and merge_log for diameter re-rendering
                 self.acc_tree_root = root
                 self.acc_merge_log = root._merge_log
+
+                # Unified result container
+                self.acc_result = ACCResult(
+                    root=root,
+                    merge_log=root._merge_log,
+                    steps=acc_steps,
+                    algorithm=self.acc_algorithm,
+                    local_matrix=local_matrix,
+                    global_matrix=global_matrix,
+                    diversity=diversity,
+                    min_diameter=min_d,
+                    max_diameter=max_d,
+                    cached_steps=getattr(root, "_cached_steps", None),
+                )
             finally:
                 acc_logger.removeHandler(log_handler)
                 acc_logger.setLevel(original_level)
                 self.acc_log = log_stream.getvalue()
                 log_stream.close()
                 self.right_panel.show_log_btn.setEnabled(True)
+                self.right_panel.send_btn.setEnabled(True)
 
             # Visualize with step controls
             self.right_panel.acc_widget.set_acc_steps(acc_steps)
 
             if acc_steps:
                 final_step = acc_steps[-1]
+                self._update_angle_info_label(final_step)
                 clusters = final_step["clusters"]
                 if clusters:
                     cluster = clusters[0]
@@ -4201,27 +4838,52 @@ class MainWindow(QMainWindow):
             return
 
         try:
+            adjust = self.right_panel.adjust_cb.isChecked()
             if getattr(self, "acc_algorithm", "Tree") == "Paper":
                 steps = rerender_acc_paper(
-                    self.acc_tree_root, self.acc_merge_log,
+                    self.acc_tree_root,
+                    self.acc_merge_log,
                     self.acc_cached_steps,
                     self.acc_tree_root._local_matrix,
                     self.acc_tree_root._global_matrix,
                     self.acc_tree_root._diversity,
-                    min_diameter=min_diameter, max_diameter=max_diameter,
+                    min_diameter=min_diameter,
+                    max_diameter=max_diameter,
+                    adjust=adjust,
                 )
             else:
                 steps = rerender_acc_tree(
-                    self.acc_tree_root, self.acc_merge_log,
-                    min_diameter=min_diameter, max_diameter=max_diameter,
+                    self.acc_tree_root,
+                    self.acc_merge_log,
+                    min_diameter=min_diameter,
+                    max_diameter=max_diameter,
                 )
             current_step = self.right_panel.acc_widget.current_step
             self.right_panel.acc_widget.set_acc_steps(steps)
             # Restore step position
             if current_step < len(steps):
                 self.right_panel.acc_widget.step_slider.setValue(current_step)
+
+            # Update angle info label
+            if steps:
+                self._update_angle_info_label(steps[-1])
+
+            # Sync unified result container
+            if hasattr(self, "acc_result") and self.acc_result is not None:
+                self.acc_result.steps = steps
+                self.acc_result.min_diameter = min_diameter
+                self.acc_result.max_diameter = max_diameter
         except Exception as e:
             logger.warning("Re-render failed: %s", e)
+
+    def _update_angle_info_label(self, step):
+        """Update the angle info label with raw_total and target angles."""
+        raw_total = step.get("raw_total_angle", 0)
+        target = step.get("target_angle", 0)
+        if raw_total > 0:
+            self.right_panel.angle_info_label.setText(f"{raw_total:.1f}° → {target:.1f}°")
+        else:
+            self.right_panel.angle_info_label.setText("")
 
     def run_nmds(self):
         """Run NMDS based on selected matrix type"""
@@ -4261,29 +4923,73 @@ class MainWindow(QMainWindow):
             logger.debug("NMDS traceback", exc_info=True)
 
     def show_acc_data(self):
-        """Show ACC tree structure data in a dialog"""
-        from acc_core_tree import _make_radius_fn
-
-        if not hasattr(self, "acc_tree_root") or self.acc_tree_root is None:
-            QMessageBox.information(
-                self, "No Data Available", "No ACC tree data is available.\nPlease generate ACC first."
-            )
+        """Show detailed ACC computation steps in a dialog"""
+        if not hasattr(self, "acc_result") or self.acc_result is None:
+            QMessageBox.information(self, "No Data Available", "No ACC data is available.\nPlease generate ACC first.")
             return
 
-        try:
-            min_d = float(self.right_panel.min_diameter.text()) if self.right_panel.min_diameter.text().strip() else None
-        except ValueError:
-            min_d = None
-        try:
-            max_d = float(self.right_panel.max_diameter.text()) if self.right_panel.max_diameter.text().strip() else None
-        except ValueError:
-            max_d = None
+        steps = self.acc_result.steps
+        if not steps:
+            QMessageBox.information(self, "No Data", "No ACC steps available.")
+            return
 
-        radius_fn = _make_radius_fn(min_d, max_d)
-        text = _format_acc_tree(self.acc_tree_root, radius_fn)
+        lines = []
+        lines.append(f"ACC Computation Details  (Algorithm: {getattr(self, 'acc_algorithm', 'Unknown')})")
+        lines.append(f"{'=' * 70}")
+
+        for step in steps:
+            step_idx = step.get("step", 0)
+            action = step.get("action", "")
+            desc = step.get("description", "")
+            raw_total = step.get("raw_total_angle", 0)
+            target = step.get("target_angle", 0)
+
+            lines.append("")
+            action_labels = {
+                "initial": "Create Initial Pair",
+                "new_pair": "Create New Pair",
+                "add_area": "Add Area to Cluster",
+                "merge_clusters": "Merge Two Clusters",
+            }
+            label = action_labels.get(action, action)
+            lines.append(f"Step {step_idx + 1}: {label}")
+            lines.append(f"{'-' * 50}")
+            lines.append(f"  {desc}")
+
+            # Computation log from render_paper
+            comp_log = step.get("computation_log", [])
+            if comp_log:
+                lines.append("")
+                lines.extend(comp_log)
+
+            lines.append("")
+
+        text = "\n".join(lines)
         dialog = LogViewerDialog(text, self)
-        dialog.setWindowTitle("ACC Tree Structure")
+        dialog.setWindowTitle("ACC Computation Details")
         dialog.exec_()
+
+    def send_acc_to_list(self):
+        """Send current ACC result to ACC List panel"""
+        if not hasattr(self, "acc_result") or self.acc_result is None:
+            return
+        raw_name = self.left_panel.local_matrix_widget.loaded_name or "ACC"
+        default_name = (
+            re.sub(r"[_\s-]*(local|global)[_\s-]*", "", raw_name, flags=re.IGNORECASE).strip("_- ") or raw_name
+        )
+        name, ok = QInputDialog.getText(self, "ACC Name", "Enter a name for this ACC:", text=default_name)
+        if not ok:
+            return
+        name = name.strip() or default_name
+        result_copy = copy.copy(self.acc_result)
+        flip = self.right_panel.flip_cb.isChecked()
+        self.acc_list_panel.add_result(result_copy, name, flip=flip)
+        # Show the panel and check the View menu action
+        self.acc_list_scroll.setVisible(True)
+        for action in self.panel_actions:
+            if action.text() == "ACC List":
+                action.setChecked(True)
+                break
 
 
 def main():
