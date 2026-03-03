@@ -3790,7 +3790,7 @@ class MainWindow(QMainWindow):
 
     def init_ui(self):
         self.setWindowTitle("ACC Visualizer - Step-by-Step Clustering")
-        self.setGeometry(50, 50, 2400, 900)
+        self.setGeometry(50, 50, 1920, 900)
 
         # Create five panels
         self.data_panel = DataPanel()
@@ -3828,6 +3828,10 @@ class MainWindow(QMainWindow):
         self.splitter.addWidget(self.right_scroll)
         self.splitter.addWidget(self.nmds_scroll)
 
+        # Hide Raw Data and NMDS panels by default
+        self.data_scroll.setVisible(False)
+        self.nmds_scroll.setVisible(False)
+
         # Set initial sizes
         self.splitter.setSizes([400, 450, 450, 500, 500])
 
@@ -3843,10 +3847,11 @@ class MainWindow(QMainWindow):
 
         toolbar = self.addToolBar("Panels")
 
+        hidden_by_default = {"Data", "NMDS"}
         for i, name in enumerate(panel_names):
             action = QAction(name, self)
             action.setCheckable(True)
-            action.setChecked(True)
+            action.setChecked(name not in hidden_by_default)
             action.toggled.connect(lambda visible, idx=i: self.toggle_panel(idx, visible))
             view_menu.addAction(action)
             toolbar.addAction(action)
