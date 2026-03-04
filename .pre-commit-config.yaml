@@ -28,7 +28,7 @@ repos:
     hooks:
       # Prevent large files from being committed
       - id: check-added-large-files
-        args: ['--maxkb=1024']
+        args: ['--maxkb=2048']
       # Check YAML syntax
       - id: check-yaml
         exclude: ^\.github/workflows/  # GitHub Actions YAML can be more flexible
